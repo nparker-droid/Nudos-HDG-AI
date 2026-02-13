@@ -3,14 +3,13 @@ import { AnalysisResult } from "../types.ts";
 
 const SYSTEM_PROMPT = `
 Eres un Asistente Experto en Interpretación de Planos Hidráulicos y Gestión de Inventarios de Redes de Agua Potable.
-Analiza cuadros de nudos y extrae inventario JSON.
-REGLAS: Piezas (Codos, Tees, Válvulas), Materiales (HDPE, Hierro Fundido), Anclajes (Trapecios).
+Analiza imágenes de "Cuadros de Nudos" y extrae un inventario técnico preciso en JSON.
+REGLAS: Identifica Codos, Tees, Válvulas, Diámetros y Anclajes.
 `;
 
 export async function analyzeHydraulicPlan(base64Data: string): Promise<AnalysisResult> {
-  // Inicialización dinámica de la KEY
-  const key = (window as any).process?.env?.API_KEY || "";
-  const ai = new GoogleGenAI({ apiKey: key });
+  // Inicialización limpia usando la variable de entorno
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || "" });
   
   const mimeTypeMatch = base64Data.match(/^data:([^;]+);base64,/);
   const mimeType = mimeTypeMatch ? mimeTypeMatch[1] : "image/png";
@@ -22,7 +21,7 @@ export async function analyzeHydraulicPlan(base64Data: string): Promise<Analysis
       {
         parts: [
           { inlineData: { mimeType, data: base64Clean } }, 
-          { text: "Analiza este cuadro de nudos y genera el inventario JSON." }
+          { text: "Genera el inventario completo de este plano hidráulico en formato JSON." }
         ] 
       }
     ],
@@ -65,6 +64,6 @@ export async function analyzeHydraulicPlan(base64Data: string): Promise<Analysis
   });
 
   const text = response.text;
-  if (!text) throw new Error("Sin respuesta de IA");
+  if (!text) throw new Error("No se obtuvo respuesta de la IA.");
   return JSON.parse(text) as AnalysisResult;
 }
