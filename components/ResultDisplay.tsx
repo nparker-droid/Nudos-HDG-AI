@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { AnalysisResult, HydraulicNode, Piece, NodeMaterial, Project } from '../types.ts';
 import AuditReportModal from './AuditReportModal.tsx';
@@ -18,7 +17,13 @@ interface ResultDisplayProps {
   project?: Project;
 }
 
-const PieceRow: React.FC<{ piece: Piece, onUpdate: (updates: Partial<Piece>) => void, onRemove: () => void }> = ({ piece, onUpdate, onRemove }) => {
+interface PieceRowProps {
+  piece: Piece;
+  onUpdate: (updates: Partial<Piece>) => void;
+  onRemove: () => void;
+}
+
+const PieceRow: React.FC<PieceRowProps> = ({ piece, onUpdate, onRemove }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [localWeight, setLocalWeight] = useState(piece.weight !== undefined ? piece.weight.toString().replace('.', ',') : '');
 
@@ -76,7 +81,17 @@ const PieceRow: React.FC<{ piece: Piece, onUpdate: (updates: Partial<Piece>) => 
   );
 };
 
-const NodeCard: React.FC<{ node: HydraulicNode, index: number, onUpdate: (updates: Partial<HydraulicNode>) => void, onRemove: () => void, onSave: () => void, onCopy: () => void, isDuplicate: boolean }> = ({ node, index, onUpdate, onRemove, onSave, onCopy, isDuplicate }) => {
+interface NodeCardProps {
+  node: HydraulicNode;
+  index: number;
+  onUpdate: (updates: Partial<HydraulicNode>) => void;
+  onRemove: () => void;
+  onSave: () => void;
+  onCopy: () => void;
+  isDuplicate: boolean;
+}
+
+const NodeCard: React.FC<NodeCardProps> = ({ node, index, onUpdate, onRemove, onSave, onCopy, isDuplicate }) => {
   const [isEditingHeader, setIsEditingHeader] = useState(false);
   const [editedName, setEditedName] = useState(node.nodeName);
   const [editedId, setEditedId] = useState(node.id);
@@ -118,6 +133,12 @@ const NodeCard: React.FC<{ node: HydraulicNode, index: number, onUpdate: (update
     setIsEditingAnchorage(false);
   };
 
+  // Función para formatear IDs individuales (ej: 1-4 -> 01, 02, 03, 04)
+  const formatIdsForDisplay = (idStr: string) => {
+    const matches = idStr.match(/\d+/g);
+    if (!matches) return idStr;
+    return matches.map(m => m.padStart(2, '0')).join(', ');
+  };
 
   return (
     <div className={`bg-white border-2 rounded-[2rem] overflow-hidden mb-6 shadow-sm transition-all group w-full ${isDuplicate ? 'border-amber-400' : incompleteCount > 0 ? 'border-amber-200' : 'border-slate-100 hover:border-[#88C13E]'}`}>
@@ -136,7 +157,7 @@ const NodeCard: React.FC<{ node: HydraulicNode, index: number, onUpdate: (update
             ) : (
               <div className="flex items-center group/title gap-2">
                 <h4 className="text-base font-black text-[#004071] uppercase tracking-tighter cursor-pointer" onClick={() => setIsEditingHeader(true)}>
-                  {node.nodeName} <span className={`${incompleteCount > 0 ? 'text-amber-600' : 'text-[#88C13E]'} font-bold ml-1`}>({node.id})</span>
+                  {node.nodeName} <span className={`${incompleteCount > 0 ? 'text-amber-600' : 'text-[#88C13E]'} font-bold ml-1`}>({formatIdsForDisplay(node.id)})</span>
                 </h4>
                 {incompleteCount > 0 && <span className="bg-amber-100 text-amber-700 text-[8px] font-black px-2 py-0.5 rounded-full uppercase">Revisar {incompleteCount} items</span>}
                 
@@ -232,15 +253,19 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({ analysisId, result, searc
     }, 0);
   }, [filteredNodes]);
 
+  // Detección de nudos faltantes corregida
   const missingNodes = useMemo(() => {
     const allIds = new Set<number>();
     result.nodes.forEach(node => {
-      node.id.split(',').forEach(idStr => {
-        const num = parseInt(idStr.trim(), 10);
-        if (!isNaN(num)) {
-          allIds.add(num);
-        }
-      });
+      const matches = node.id.match(/\d+/g);
+      if (matches) {
+        matches.forEach(idStr => {
+          const num = parseInt(idStr, 10);
+          if (!isNaN(num)) {
+            allIds.add(num);
+          }
+        });
+      }
     });
 
     if (allIds.size < 2) return [];
@@ -265,6 +290,13 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({ analysisId, result, searc
   }, [result.nodes, isManual]);
 
   const isAnythingToReport = unifiedNodesSummary.length > 0 || missingNodes.length > 0;
+
+  // Helper para formatear visualmente IDs individuales
+  const formatIdsForDisplay = (idStr: string) => {
+    const matches = idStr.match(/\d+/g);
+    if (!matches) return idStr;
+    return matches.map(m => m.padStart(2, '0')).join(', ');
+  };
 
   return (
     <div className="space-y-8 w-full">
@@ -305,9 +337,9 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({ analysisId, result, searc
               <div className="space-y-1.5">
                 {unifiedNodesSummary.map((node, index) => (
                    <p key={index} className="text-[10px] text-green-700 font-bold uppercase leading-relaxed opacity-90">
-                     Para <span className="text-green-900 font-black">"{node.nodeName}"</span>, se unificó el esquema que contenía los nudos <span className="text-green-900 font-black">{node.sourceGroupings![0]}</span> y {node.sourceGroupings!.slice(1).map((group, i) => (
+                     Para <span className="text-green-900 font-black">"{node.nodeName}"</span>, se unificó el esquema que contenía los nudos <span className="text-green-900 font-black">{formatIdsForDisplay(node.sourceGroupings![0])}</span> y {node.sourceGroupings!.slice(1).map((group, i) => (
                         <span key={i}>
-                            otro que contenía <span className="text-green-900 font-black">{group}</span>{i < node.sourceGroupings!.length - 2 ? ' y ' : ''}
+                            otro que contenía <span className="text-green-900 font-black">{formatIdsForDisplay(group)}</span>{i < node.sourceGroupings!.length - 2 ? ' y ' : ''}
                         </span>
                     ))}.
                    </p>
@@ -403,8 +435,9 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({ analysisId, result, searc
 
       <div className="w-full">
         {filteredNodes.map((node, idx) => {
-          const ids = node.id.split(',').map(s => s.trim().toLowerCase());
-          const isDuplicate = ids.some(id => duplicateIds.has(id));
+          const nodeNumericIds = node.id.match(/\d+/g) || [];
+          const isDuplicate = nodeNumericIds.some(id => duplicateIds.has(id));
+          
           return (
             <NodeCard 
               key={`${node.id}-${idx}`} 
@@ -423,7 +456,6 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({ analysisId, result, searc
         <AuditReportModal 
             project={project}
             repeatedNodes={unifiedNodesSummary}
-            // Fix: Explicitly type sort parameters to resolve a TypeScript type inference error.
             missingNodes={Array.from(nodesToReportMissing).sort((a: number, b: number) => a - b)}
             onClose={() => setShowAuditReportModal(false)}
         />

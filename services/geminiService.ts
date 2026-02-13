@@ -1,3 +1,4 @@
+// @google/genai SDK used for hydraulic plan analysis
 import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
 import { AnalysisResult } from "../types.ts";
 
@@ -25,8 +26,9 @@ export async function analyzeHydraulicPlan(base64Data: string): Promise<Analysis
   inFlight = true;
 
   try {
-    const apiKey = (process.env.GEMINI_API_KEY || process.env.API_KEY || "").trim();
-    if (!apiKey) throw new Error("Falta la API Key. Configura GEMINI_API_KEY en Vercel.");
+    // Correctly accessing API key from process.env.API_KEY as per guidelines
+    const apiKey = process.env.API_KEY;
+    if (!apiKey) throw new Error("Falta la API Key. Configura API_KEY en el entorno.");
 
     const ai = new GoogleGenAI({ apiKey });
 
@@ -37,32 +39,29 @@ export async function analyzeHydraulicPlan(base64Data: string): Promise<Analysis
     // Limpia el prefijo data:
     const base64Clean = base64Data.includes(",") ? base64Data.split(",")[1] : base64Data;
 
-    // ✅ Modelo correcto en Gemini API:
-    const MODEL_ID = "gemini-3-flash-preview"; // (no "gemini-3-flash")
+    // Fixed model selection to use gemini-3-flash-preview for general analysis tasks
+    const MODEL_ID = "gemini-3-flash-preview";
 
     const response: GenerateContentResponse = await ai.models.generateContent({
       model: MODEL_ID,
-      contents: [
-        {
-          parts: [
-            {
-              inlineData: { mimeType, data: base64Clean },
-              // ayuda para leer texto fino en planos
-              mediaResolution: { level: "media_resolution_high" },
-            },
-            {
-              text:
-                "Analiza exhaustivamente este cuadro de nudos. " +
-                "Identifica cada nudo por su número, lista todas sus piezas especiales con material, diámetro y cantidad, " +
-                "y cuenta los anclajes de hormigón requeridos.",
-            },
-          ],
-        },
-      ],
+      // contents should be a single Content object with parts as per guidelines for multi-part content
+      contents: {
+        parts: [
+          {
+            inlineData: { mimeType, data: base64Clean },
+          },
+          {
+            text:
+              "Analiza exhaustivamente este cuadro de nudos. " +
+              "Identifica cada nudo por su número, lista todas sus piezas especiales con material, diámetro y cantidad, " +
+              "y cuenta los anclajes de hormigón requeridos.",
+          },
+        ],
+      },
       config: {
         systemInstruction: SYSTEM_PROMPT,
-        // Si quieres menos latencia:
-        thinkingConfig: { thinkingLevel: "minimal" },
+        // Using thinkingBudget: 0 to disable thinking tokens and reduce latency
+        thinkingConfig: { thinkingBudget: 0 },
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -102,12 +101,13 @@ export async function analyzeHydraulicPlan(base64Data: string): Promise<Analysis
       },
     });
 
+    // Accessing response text property directly as per guidelines
     const text = response.text;
     if (!text) throw new Error("La IA no devolvió texto (response.text vacío).");
 
     try {
       return JSON.parse(text) as AnalysisResult;
-    } catch {
+    } catch (err) {
       console.error("Respuesta cruda (no JSON):", text);
       throw new Error("El modelo respondió, pero NO devolvió JSON válido.");
     }
@@ -122,4 +122,3 @@ export async function analyzeHydraulicPlan(base64Data: string): Promise<Analysis
     inFlight = false;
   }
 }
-

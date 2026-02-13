@@ -57,11 +57,6 @@ const getEstimatedWeight = (name: string, diameter: string, material: string): n
   return parseFloat(baseWeight.toFixed(2));
 };
 
-
-/**
- * Componente Principal de la Aplicación
- * Gestiona el estado global de proyectos, navegación y persistencia de datos.
- */
 const App: React.FC = () => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [libraryNodes, setLibraryNodes] = useState<LibraryNode[]>([]);
@@ -79,8 +74,8 @@ const App: React.FC = () => {
   const [newCategoryName, setNewCategoryName] = useState('');
   const [copiedNode, setCopiedNode] = useState<HydraulicNode | null>(null);
   const [notification, setNotification] = useState('');
+  const [isAutoSaving, setIsAutoSaving] = useState(false);
 
-  // Efecto para la notificación
   useEffect(() => {
     if (notification) {
       const timer = setTimeout(() => {
@@ -90,7 +85,6 @@ const App: React.FC = () => {
     }
   }, [notification]);
 
-  // Estado para la confirmación de borrado
   const [deleteConfirm, setDeleteConfirm] = useState<{
     show: boolean;
     type: 'project' | 'category' | 'analysis' | 'node';
@@ -122,10 +116,17 @@ const App: React.FC = () => {
     if (savedCredits !== null) setCredits(parseInt(savedCredits));
   }, []);
 
+  // Guardado Automático con Indicador Visual
   useEffect(() => {
-    localStorage.setItem('hidrogestion_v10_projects', JSON.stringify(projects));
-    localStorage.setItem('hidrogestion_v10_library', JSON.stringify(libraryNodes));
-    localStorage.setItem('hidrogestion_v10_credits', credits.toString());
+    if (projects.length > 0) {
+      setIsAutoSaving(true);
+      localStorage.setItem('hidrogestion_v10_projects', JSON.stringify(projects));
+      localStorage.setItem('hidrogestion_v10_library', JSON.stringify(libraryNodes));
+      localStorage.setItem('hidrogestion_v10_credits', credits.toString());
+      
+      const timer = setTimeout(() => setIsAutoSaving(false), 800);
+      return () => clearTimeout(timer);
+    }
   }, [projects, libraryNodes, credits]);
 
   const activeProject = useMemo(() => projects.find(p => p.id === activeProjectId), [projects, activeProjectId]);
@@ -137,13 +138,16 @@ const App: React.FC = () => {
     const duplicates = new Set<string>();
     activeCategory.analyses.forEach(analysis => {
       analysis.result?.nodes.forEach(node => {
-        const ids = node.id.split(',').map(s => s.trim().toLowerCase());
-        ids.forEach(id => {
-          if (id) {
-            idCount.set(id, (idCount.get(id) || 0) + 1);
-            if (idCount.get(id)! > 1) duplicates.add(id);
-          }
-        });
+        const matches = node.id.match(/\d+/g);
+        if (matches) {
+          matches.forEach(id => {
+            const normalizedId = id.trim().toLowerCase();
+            if (normalizedId) {
+              idCount.set(normalizedId, (idCount.get(normalizedId) || 0) + 1);
+              if (idCount.get(normalizedId)! > 1) duplicates.add(normalizedId);
+            }
+          });
+        }
       });
     });
     return duplicates;
@@ -160,10 +164,10 @@ const App: React.FC = () => {
     
     let nextNum = 1;
     const allNodeIds = activeCategory.analyses.flatMap(a => a.result?.nodes.map(n => n.id) || []);
-    const numbers = allNodeIds.flatMap(idStr => idStr.split(',').map(s => {
-      const match = s.trim().match(/\d+/);
-      return match ? parseInt(match[0]) : NaN;
-    }).filter(n => !isNaN(n)));
+    const numbers = allNodeIds.flatMap(idStr => {
+      const matches = idStr.match(/\d+/g);
+      return matches ? matches.map(m => parseInt(m, 10)) : [];
+    }).filter(n => !isNaN(n));
     
     if (numbers.length > 0) nextNum = Math.max(...numbers) + 1;
     const formattedId = nextNum.toString().padStart(2, '0');
@@ -185,6 +189,7 @@ const App: React.FC = () => {
       ...p,
       categories: p.categories.map(c => c.id === activeCategoryId ? { ...c, analyses: [...c.analyses, pasteAnalysis] } : c)
     } : p));
+    setNotification('Nudo pegado con éxito.');
   };
 
 
@@ -220,11 +225,13 @@ const App: React.FC = () => {
     }
     if (isEditingProject) {
       setProjects(prev => prev.map(p => p.id === activeProjectId ? { ...p, ...projectForm } as Project : p));
+      setNotification('Proyecto actualizado.');
     } else {
       const project: Project = { ...projectForm as Project, id: generateId(), categories: [] };
       setProjects(prev => [...prev, project]);
       setActiveProjectId(project.id);
       setActiveCategoryId(null);
+      setNotification('Proyecto creado.');
     }
     setShowProjectModal(false);
   };
@@ -238,7 +245,7 @@ const App: React.FC = () => {
           const newProject = { ...imported, id: generateId() };
           setProjects(prev => [...prev, newProject]);
           setActiveProjectId(newProject.id);
-          alert("Proyecto importado exitosamente");
+          setNotification('Proyecto importado con éxito.');
         } else {
           throw new Error("Formato inválido");
         }
@@ -249,8 +256,8 @@ const App: React.FC = () => {
     reader.readAsText(file);
   };
 
-  const handleExportProject = (projectId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleExportProject = (projectId: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
     const projectToExport = projects.find(p => p.id === projectId);
     if (!projectToExport) return;
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(projectToExport, null, 2));
@@ -260,18 +267,13 @@ const App: React.FC = () => {
     document.body.appendChild(downloadAnchorNode);
     downloadAnchorNode.click();
     downloadAnchorNode.remove();
+    setNotification('Archivo descargado correctamente.');
+    setShowSaveModal(false);
   };
 
   const handleExportLocal = () => {
     if (!activeProject) return;
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(activeProject));
-    const downloadAnchorNode = document.createElement('a');
-    downloadAnchorNode.setAttribute("href", dataStr);
-    downloadAnchorNode.setAttribute("download", `NUDOS_${activeProject.name.replace(/\s+/g, '_')}_${activeProject.code}.json`);
-    document.body.appendChild(downloadAnchorNode);
-    downloadAnchorNode.click();
-    downloadAnchorNode.remove();
-    setShowSaveModal(false);
+    handleExportProject(activeProject.id);
   };
 
   const handleExportAPU = () => {
@@ -290,8 +292,8 @@ const App: React.FC = () => {
 
     activeCategory.analyses.forEach(analysis => {
       analysis.result?.nodes.forEach(node => {
-        const ids = node.id.split(',').map(s => s.trim()).filter(Boolean);
-        const multiplier = ids.length;
+        const numericIds = node.id.match(/\d+/g) || [];
+        const multiplier = numericIds.length || 1;
 
         node.pieces.forEach(p => {
           const materialKey = p.material.toUpperCase();
@@ -358,6 +360,7 @@ const App: React.FC = () => {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    setNotification('APU Exportado.');
   };
 
   const handleExportSummaryTable = () => {
@@ -366,8 +369,12 @@ const App: React.FC = () => {
     const rawNodes = activeCategory.analyses.flatMap(a => a.result?.nodes || []);
     const expandedNodes: HydraulicNode[] = [];
     rawNodes.forEach(node => {
-      const ids = node.id.split(',').map(s => s.trim()).filter(Boolean);
-      ids.forEach(individualId => expandedNodes.push({ ...node, id: individualId }));
+      const numericIds = node.id.match(/\d+/g) || [];
+      if (numericIds.length > 0) {
+        numericIds.forEach(individualId => expandedNodes.push({ ...node, id: individualId }));
+      } else {
+        expandedNodes.push(node);
+      }
     });
 
     if (expandedNodes.length === 0) return alert("No hay nudos para exportar.");
@@ -471,10 +478,11 @@ const App: React.FC = () => {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    setNotification('Tabla de Resumen Exportada.');
   };
 
   const handleSaveToDrive = async () => {
-    alert("Esta funcionalidad requiere configuración de API.");
+    alert("Esta funcionalidad requiere configuración de API de Google Drive.");
     setShowSaveModal(false);
   };
 
@@ -506,6 +514,7 @@ const App: React.FC = () => {
     setActiveCategoryId(newCat.id);
     setShowCategoryModal(false);
     setNewCategoryName('');
+    setNotification('Capítulo creado.');
   };
 
   const handleEditCategory = (projectId: string, categoryId: string, e: React.MouseEvent) => {
@@ -554,6 +563,7 @@ const App: React.FC = () => {
           analyses: c.analyses.map(a => a.id === analysisId ? { ...a, status: 'done' as const, result } : a)
         } : c)
       } : p));
+      setNotification('Análisis completado con éxito.');
     } catch (err) {
       setProjects(prev => prev.map(p => ({
         ...p,
@@ -574,7 +584,6 @@ const App: React.FC = () => {
     } : p));
   };
 
-  // Eliminación de Análisis (Item) con confirmación de borrado
   const removeAnalysis = (analysisId: string) => {
     if (!activeProjectId || !activeCategoryId) return;
     setDeleteConfirm({ show: true, type: 'analysis', projectId: activeProjectId, analysisId, name: 'Análisis de Imagen' });
@@ -593,31 +602,32 @@ const App: React.FC = () => {
     } : p));
   };
 
-  // Eliminación de Nudo con confirmación de borrado
   const handleRemoveNode = (analysisId: string, nodeId: string) => {
     const analysis = activeCategory?.analyses.find(a => a.id === analysisId);
     const node = analysis?.result?.nodes.find(n => n.id === nodeId);
     setDeleteConfirm({ show: true, type: 'node', projectId: activeProjectId!, analysisId, nodeId, name: node?.nodeName || 'Nudo' });
   };
 
-  // Ejecución efectiva de la eliminación tras confirmación
   const executeDeletion = () => {
     const { type, projectId, categoryId, analysisId, nodeId } = deleteConfirm;
 
     if (type === 'project') {
       setProjects(prev => prev.filter(p => p.id !== projectId));
       if (activeProjectId === projectId) { setActiveProjectId(null); setActiveCategoryId(null); }
+      setNotification('Proyecto eliminado.');
     } else if (type === 'category') {
       setProjects(prev => prev.map(p => p.id === projectId ? {
         ...p, categories: p.categories.filter(c => c.id !== categoryId)
       } : p));
       if (activeCategoryId === categoryId) setActiveCategoryId(null);
+      setNotification('Capítulo eliminado.');
     } else if (type === 'analysis') {
       setProjects(prev => prev.map(p => p.id === activeProjectId ? {
         ...p, categories: p.categories.map(c => c.id === activeCategoryId ? {
-          ...c, analyses: c.analyses.filter(a => a.id === analysisId)
+          ...c, analyses: c.analyses.filter(a => a.id !== analysisId)
         } : c)
       } : p));
+      setNotification('Análisis eliminado.');
     } else if (type === 'node') {
       setProjects(prev => prev.map(p => p.id === activeProjectId ? {
         ...p, categories: p.categories.map(c => c.id === activeCategoryId ? {
@@ -626,6 +636,7 @@ const App: React.FC = () => {
           } : a)
         } : c)
       } : p));
+      setNotification('Nudo eliminado.');
     }
     setDeleteConfirm({ ...deleteConfirm, show: false });
   };
@@ -651,10 +662,10 @@ const App: React.FC = () => {
     if (!activeProjectId || !activeCategoryId || !activeCategory) return;
     let nextNum = 1;
     const allNodeIds = activeCategory.analyses.flatMap(a => a.result?.nodes.map(n => n.id) || []);
-    const numbers = allNodeIds.flatMap(idStr => idStr.split(',').map(s => {
-      const match = s.trim().match(/\d+/);
-      return match ? parseInt(match[0]) : NaN;
-    }).filter(n => !isNaN(n)));
+    const numbers = allNodeIds.flatMap(idStr => {
+      const matches = idStr.match(/\d+/g);
+      return matches ? matches.map(m => parseInt(m, 10)) : [];
+    }).filter(n => !isNaN(n));
     if (numbers.length > 0) nextNum = Math.max(...numbers) + 1;
     const formattedId = nextNum.toString().padStart(2, '0');
     const newNode: HydraulicNode = { id: formattedId, nodeName: `Nudo ${formattedId}`, type: 'Numerico', pieces: [], anchorageCount: 0 };
@@ -663,6 +674,7 @@ const App: React.FC = () => {
       ...p,
       categories: p.categories.map(c => c.id === activeCategoryId ? { ...c, analyses: [...c.analyses, manualAnalysis] } : c)
     } : p));
+    setNotification('Nudo manual creado.');
   };
 
   const handleUseLibraryNode = (node: LibraryNode) => {
@@ -670,10 +682,10 @@ const App: React.FC = () => {
     
     let nextNum = 1;
     const allNodeIds = activeCategory.analyses.flatMap(a => a.result?.nodes.map(n => n.id) || []);
-    const numbers = allNodeIds.flatMap(idStr => idStr.split(',').map(s => {
-        const match = s.trim().match(/\d+/);
-        return match ? parseInt(match[0]) : NaN;
-    }).filter(n => !isNaN(n)));
+    const numbers = allNodeIds.flatMap(idStr => {
+      const matches = idStr.match(/\d+/g);
+      return matches ? matches.map(m => parseInt(m, 10)) : [];
+    }).filter(n => !isNaN(n));
     if (numbers.length > 0) nextNum = Math.max(...numbers) + 1;
     const formattedId = nextNum.toString().padStart(2, '0');
 
@@ -690,9 +702,9 @@ const App: React.FC = () => {
       categories: p.categories.map(c => c.id === activeCategoryId ? { ...c, analyses: [...c.analyses, newAnalysis] } : c)
     } : p));
     setShowLibraryModal(false);
+    setNotification('Nudo importado de la biblioteca.');
   };
 
-  // --- Renderizado Principal (Layout) ---
   return (
     <div className="flex h-screen bg-[#f1f5f9] overflow-hidden font-['Inter']">
       <Sidebar
@@ -718,6 +730,11 @@ const App: React.FC = () => {
                   <h2 className="text-xl font-black text-[#004071] uppercase tracking-tighter leading-none">{activeProject.name}</h2>
                   <button onClick={() => handleOpenEditProject(activeProject.id)} className="text-[#88C13E] hover:text-[#004071] transition-colors"><i className="fa-solid fa-pen-to-square text-sm"></i></button>
                   <span className="text-[10px] font-black text-white uppercase tracking-widest bg-[#004071] px-2 py-1 rounded-md">{activeProject.code}</span>
+                  {isAutoSaving && (
+                     <span className="text-[8px] font-black text-[#88C13E] uppercase tracking-widest bg-[#88C13E]/10 px-2 py-1 rounded animate-pulse">
+                        <i className="fa-solid fa-sync mr-1"></i> Auto-guardando
+                     </span>
+                  )}
                 </div>
                 {activeCategory && <div className="mt-2"><span className="text-[9px] font-black text-[#88C13E] uppercase tracking-widest bg-[#88C13E]/10 px-2 py-0.5 rounded-md">Capítulo: {activeCategory.name}</span></div>}
               </div>
@@ -727,7 +744,7 @@ const App: React.FC = () => {
                   <input type="text" placeholder="Buscar nudo..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-12 pr-6 py-3 bg-slate-50 border border-slate-100 rounded-2xl text-[11px] font-bold text-[#004071] w-64 focus:bg-white focus:border-[#88C13E] outline-none" />
                 </div>
                 <div className="flex items-center gap-2">
-                  <button onClick={() => setShowSaveModal(true)} className="px-6 py-3 bg-[#004071] text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg flex items-center gap-2 hover:bg-[#002D50]">
+                  <button onClick={() => setShowSaveModal(true)} className="px-6 py-3 bg-[#004071] text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg flex items-center gap-2 hover:bg-[#002D50] transition-all">
                     <i className="fa-solid fa-cloud-arrow-up text-xs"></i> Guardar
                   </button>
                   {activeCategory && (
@@ -783,11 +800,12 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {/* --- MODALES Y NOTIFICACIONES --- */}
         {notification && (
-          <div className="fixed bottom-6 right-6 bg-green-500 text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-4 animate-in slide-in-from-bottom-5 duration-300 z-[200]">
-            <i className="fa-solid fa-check-circle text-xl"></i>
-            <span className="text-sm font-bold">{notification}</span>
+          <div className="fixed bottom-6 right-6 bg-[#004071] border-l-4 border-[#88C13E] text-white px-8 py-4 rounded-2xl shadow-2xl flex items-center gap-4 animate-in slide-in-from-right duration-500 z-[300]">
+            <div className="w-8 h-8 bg-[#88C13E] rounded-full flex items-center justify-center">
+              <i className="fa-solid fa-check text-xs"></i>
+            </div>
+            <span className="text-xs font-black uppercase tracking-widest">{notification}</span>
           </div>
         )}
         
@@ -797,6 +815,67 @@ const App: React.FC = () => {
             onCreateEmpty={handleCreateEmptyNode}
             onOpenLibrary={() => setShowLibraryModal(true)}
           />
+        )}
+
+        {/* Modal de Opciones de Guardado */}
+        {showSaveModal && (
+          <div className="fixed inset-0 bg-[#002d50]/90 backdrop-blur-md z-[250] flex items-center justify-center p-4">
+            <div className="bg-white w-full max-w-xl rounded-[3rem] overflow-hidden shadow-2xl animate-in zoom-in-95 duration-300">
+              <div className="px-10 py-8 bg-[#f8fafc] border-b flex justify-between items-center">
+                <div>
+                  <h2 className="text-2xl font-black text-[#004071] uppercase tracking-tighter">Opciones de Guardado</h2>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Tu progreso está seguro</p>
+                </div>
+                <button onClick={() => setShowSaveModal(false)} className="w-10 h-10 rounded-full hover:bg-slate-200 flex items-center justify-center transition-colors">
+                  <i className="fa-solid fa-xmark text-slate-400"></i>
+                </button>
+              </div>
+              <div className="p-10 space-y-6">
+                <div className="p-6 bg-green-50 border border-green-100 rounded-3xl flex items-start gap-4">
+                   <div className="w-10 h-10 bg-[#88C13E] text-white rounded-xl flex items-center justify-center shrink-0">
+                      <i className="fa-solid fa-bolt"></i>
+                   </div>
+                   <div>
+                      <h4 className="text-sm font-black text-green-900 uppercase">Guardado Automático Activo</h4>
+                      <p className="text-xs text-green-700 mt-1">Todos los cambios se están guardando localmente en la memoria de este navegador automáticamente.</p>
+                   </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4">
+                  <button 
+                    onClick={handleExportLocal}
+                    className="w-full flex items-center gap-6 p-6 bg-slate-50 hover:bg-white border-2 border-slate-100 hover:border-[#004071] rounded-[2rem] text-left transition-all group"
+                  >
+                    <div className="w-14 h-14 bg-white shadow-md rounded-2xl flex items-center justify-center text-[#004071] group-hover:scale-110 transition-transform">
+                      <i className="fa-solid fa-file-export text-xl"></i>
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-black text-[#004071] uppercase">Descargar Copia de Seguridad</h4>
+                      <p className="text-xs text-slate-400">Guarda un archivo .json en tu ordenador para moverlo a otro equipo.</p>
+                    </div>
+                  </button>
+
+                  <button 
+                    onClick={handleSaveToDrive}
+                    className="w-full flex items-center gap-6 p-6 bg-slate-50 opacity-60 border-2 border-slate-100 rounded-[2rem] text-left cursor-not-allowed"
+                  >
+                    <div className="w-14 h-14 bg-white shadow-md rounded-2xl flex items-center justify-center text-[#4285F4]">
+                      <i className="fa-brands fa-google-drive text-xl"></i>
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-black text-slate-400 uppercase">Google Drive (Próximamente)</h4>
+                      <p className="text-xs text-slate-300">Sincroniza tus proyectos directamente en la nube.</p>
+                    </div>
+                  </button>
+                </div>
+              </div>
+              <div className="px-10 py-6 bg-slate-50 flex justify-end">
+                <button onClick={() => setShowSaveModal(false)} className="px-10 py-3 bg-[#004071] text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl hover:bg-[#88C13E] transition-all">
+                  Cerrar
+                </button>
+              </div>
+            </div>
+          </div>
         )}
         
         {showLibraryModal && (
