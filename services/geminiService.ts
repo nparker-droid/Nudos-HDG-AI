@@ -2,33 +2,34 @@ import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
 import { AnalysisResult } from "../types.ts";
 
 const SYSTEM_PROMPT = `
-Eres un Asistente Experto en Interpretación de Planos Hidráulicos y Gestión de Inventarios. 
-Tu función es procesar imágenes de "Cuadros de Nudos" y convertirlos en JSON.
+Eres un Asistente Experto en Interpretación de Planos Hidráulicos y Gestión de Inventarios de Redes de Agua Potable.
+Tu objetivo es analizar imágenes de "Cuadros de Nudos" y extraer un inventario técnico preciso.
 
-REGLAS:
-1. Piezas: Codos, tees, válvulas, uniones.
-2. Matriz: Contexto, no pieza.
-3. Anclajes: Contar figuras de trapecios.
+REGLAS DE INTERPRETACIÓN:
+1. PIEZAS: Identifica Codos (especificando grados si aparecen, ej: 90°, 45°), Tees, Válvulas, Uniones, Reducciones.
+2. MATERIALES: Traduce abreviaturas (HDPE, FeFdo -> Hierro Fundido, Acero).
+3. DIMENSIONES: Extrae diámetros (ej: 75mm, 110mm, 4").
+4. ANCLAJES: Cuenta los bloques de hormigón (normalmente representados como trapecios achurados en el esquema).
+5. MATRIZ: La tubería matriz (ej: HDPE 110) es el contexto del nudo, NO una pieza del inventario del nudo en sí.
+
+RESPONDE SIEMPRE EN FORMATO JSON ESTRUCTURADO.
 `;
 
 export async function analyzeHydraulicPlan(base64Data: string): Promise<AnalysisResult> {
-  // Obtenemos la key del entorno inyectado por Vercel
-  const apiKey = (window as any).process?.env?.API_KEY || "";
-  
-  // Creamos la instancia solo cuando se llama a la función
-  const ai = new GoogleGenAI({ apiKey });
+  // Inicialización según directrices del SDK usando el entorno global
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || "" });
   
   const mimeTypeMatch = base64Data.match(/^data:([^;]+);base64,/);
   const mimeType = mimeTypeMatch ? mimeTypeMatch[1] : "image/png";
   const base64Clean = base64Data.split(',')[1] || base64Data;
 
   const response: GenerateContentResponse = await ai.models.generateContent({
-    model: 'gemini-3-pro-preview',
+    model: 'gemini-3-pro-preview', // Modelo de alta capacidad para razonamiento técnico
     contents: [ 
       {
         parts: [
           { inlineData: { mimeType, data: base64Clean } }, 
-          { text: "Generar inventario JSON de este plano hidráulico." }
+          { text: "Analiza exhaustivamente este cuadro de nudos. Identifica cada nudo por su número, lista todas sus piezas especiales con material, diámetro y cantidad, y cuenta los anclajes de hormigón requeridos." }
         ] 
       }
     ],
@@ -43,10 +44,10 @@ export async function analyzeHydraulicPlan(base64Data: string): Promise<Analysis
             items: {
               type: Type.OBJECT,
               properties: {
-                id: { type: Type.STRING },
-                nodeName: { type: Type.STRING },
-                type: { type: Type.STRING },
-                anchorageCount: { type: Type.NUMBER },
+                id: { type: Type.STRING, description: "Número del nudo (ej: 01, 15, 22)" },
+                nodeName: { type: Type.STRING, description: "Nombre descriptivo del nudo" },
+                type: { type: Type.STRING, enum: ["Numerico", "Ventosa", "Desague", "Corte", "Reductora"] },
+                anchorageCount: { type: Type.NUMBER, description: "Cantidad de anclajes de hormigón" },
                 pieces: {
                   type: Type.ARRAY,
                   items: {
@@ -63,7 +64,7 @@ export async function analyzeHydraulicPlan(base64Data: string): Promise<Analysis
               }
             }
           },
-          summary: { type: Type.STRING }
+          summary: { type: Type.STRING, description: "Breve resumen técnico de los hallazgos" }
         },
         required: ['nodes', 'summary']
       },
@@ -71,6 +72,12 @@ export async function analyzeHydraulicPlan(base64Data: string): Promise<Analysis
   });
 
   const text = response.text;
-  if (!text) throw new Error("Respuesta vacía de la IA.");
-  return JSON.parse(text) as AnalysisResult;
+  if (!text) throw new Error("La IA no devolvió una respuesta válida.");
+  
+  try {
+    return JSON.parse(text) as AnalysisResult;
+  } catch (e) {
+    console.error("Error parseando JSON de Gemini:", text);
+    throw new Error("El formato de respuesta de la IA no es un JSON válido.");
+  }
 }

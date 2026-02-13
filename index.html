@@ -10,6 +10,7 @@
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
         body { font-family: 'Inter', sans-serif; background-color: #f8fafc; margin: 0; overflow: hidden; }
         
+        /* Spinner de carga inicial */
         #root:empty {
             display: flex;
             flex-direction: column;
@@ -28,25 +29,51 @@
             border-radius: 50%;
             animation: spin 0.8s linear infinite;
         }
+        #root:empty::before {
+            content: "HIDROSCAN";
+            margin-bottom: 20px;
+            font-weight: 900;
+            letter-spacing: 0.3em;
+            color: #004071;
+            font-size: 14px;
+        }
         @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Overlay de error para diagnóstico */
+        .error-screen {
+            position: fixed;
+            inset: 0;
+            background: white;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            text-align: center;
+            z-index: 9999;
+        }
     </style>
     <script>
-        // SHIM GLOBAL: Previene errores de 'process is not defined' en librerías externas
-        window.process = { env: { API_KEY: "" } };
-        
-        window.onerror = function(msg, url, line) {
-            console.error("Error crítico:", msg, "en", url, "línea", line);
-            // Si después de 5 segundos sigue el spinner, mostramos un aviso
-            setTimeout(() => {
-                const root = document.getElementById('root');
-                if (root && root.innerHTML === "") {
-                    root.innerHTML = `<div style="padding:20px; text-align:center; color:#64748b;">
-                        <h2 style="color:#004071;">HidroScan</h2>
-                        <p>Iniciando componentes... si esto tarda demasiado, recarga la página.</p>
-                        <small style="opacity:0.5;">${msg}</small>
-                    </div>`;
-                }
-            }, 5000);
+        // Configuración crítica de entorno
+        window.process = { 
+            env: { 
+                API_KEY: "" // Se inyecta automáticamente en Vercel
+            } 
+        };
+
+        // Capturador de errores globales para evitar el spinner infinito sin info
+        window.onerror = function(msg, url, line, col, error) {
+            const root = document.getElementById('root');
+            if (root && root.innerHTML === "") {
+                root.innerHTML = `
+                    <div class="error-screen">
+                        <i class="fa-solid fa-circle-exclamation text-red-500 text-4xl mb-4"></i>
+                        <h1 class="text-xl font-black text-slate-800 uppercase">Error de Inicialización</h1>
+                        <p class="text-sm text-slate-500 mt-2">${msg}</p>
+                        <button onclick="location.reload()" class="mt-6 px-6 py-2 bg-[#004071] text-white rounded-xl font-bold text-xs">REINTENTAR</button>
+                    </div>
+                `;
+            }
         };
     </script>
 <script type="importmap">
@@ -63,7 +90,7 @@
 </head>
 <body>
     <div id="root"></div>
-    <!-- Cargador esm.sh/run: Maneja TypeScript y dependencias automáticamente sin necesidad de importmap -->
+    <!-- Cargador esm.sh: Resuelve TypeScript y dependencias automáticamente -->
     <script type="module" src="https://esm.sh/run" data-main="./index.tsx"></script>
 </body>
 </html>
