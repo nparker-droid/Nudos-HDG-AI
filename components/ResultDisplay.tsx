@@ -99,6 +99,8 @@ const NodeCard: React.FC<NodeCardProps> = ({ node, index, onUpdate, onRemove, on
   const [editedAnchorageCount, setEditedAnchorageCount] = useState(node.anchorageCount);
 
   const incompleteCount = node.pieces.filter(p => !p.name || !p.material || !p.diameter || p.quantity <= 0).length;
+  // Solo marcamos como error para verificación visual (Naranja) si faltan datos técnicos.
+  const hasError = incompleteCount > 0;
 
   const handleSaveHeader = () => {
     onUpdate({ nodeName: editedName, id: editedId });
@@ -133,18 +135,31 @@ const NodeCard: React.FC<NodeCardProps> = ({ node, index, onUpdate, onRemove, on
     setIsEditingAnchorage(false);
   };
 
-  // Función para formatear IDs individuales (ej: 1-4 -> 01, 02, 03, 04)
-  const formatIdsForDisplay = (idStr: string) => {
+  const formatIdsForDisplay = (idStr: string, type: string) => {
     const matches = idStr.match(/\d+/g);
     if (!matches) return idStr;
-    return matches.map(m => m.padStart(2, '0')).join(', ');
+    
+    const prefixMap: Record<string, string> = {
+      'Corte': 'C',
+      'Ventosa': 'V',
+      'Desague': 'D',
+      'Reductora': 'R',
+      'Numerico': ''
+    };
+    
+    const prefix = prefixMap[type] || '';
+    
+    return matches.map(m => {
+      const num = parseInt(m, 10);
+      return prefix ? `${prefix}-${num}` : m.padStart(2, '0');
+    }).join(', ');
   };
 
   return (
-    <div className={`bg-white border-2 rounded-[2rem] overflow-hidden mb-6 shadow-sm transition-all group w-full ${isDuplicate ? 'border-amber-400' : incompleteCount > 0 ? 'border-amber-200' : 'border-slate-100 hover:border-[#88C13E]'}`}>
-      <div className={`px-8 py-6 border-b flex justify-between items-center transition-colors ${incompleteCount > 0 ? 'bg-amber-50/30' : 'bg-slate-50/50 group-hover:bg-white'}`}>
+    <div className={`bg-white border-2 rounded-[2rem] overflow-hidden mb-6 shadow-sm transition-all group w-full ${hasError ? 'border-amber-400' : 'border-[#88C13E]'}`}>
+      <div className={`px-8 py-6 border-b flex justify-between items-center transition-colors ${hasError ? 'bg-amber-50/30' : 'bg-green-50/30 group-hover:bg-white'}`}>
         <div className="flex items-center gap-6 flex-grow">
-          <div className={`w-10 h-10 rounded-2xl flex items-center justify-center font-black text-lg shadow-lg shrink-0 ${incompleteCount > 0 ? 'bg-amber-500 text-white' : 'bg-[#004071] text-[#D9E021]'}`}>
+          <div className={`w-10 h-10 rounded-2xl flex items-center justify-center font-black text-lg shadow-lg shrink-0 ${hasError ? 'bg-amber-500 text-white' : 'bg-[#88C13E] text-white'}`}>
             {index + 1}
           </div>
           <div className="flex flex-col flex-grow">
@@ -157,7 +172,7 @@ const NodeCard: React.FC<NodeCardProps> = ({ node, index, onUpdate, onRemove, on
             ) : (
               <div className="flex items-center group/title gap-2">
                 <h4 className="text-base font-black text-[#004071] uppercase tracking-tighter cursor-pointer" onClick={() => setIsEditingHeader(true)}>
-                  {node.nodeName} <span className={`${incompleteCount > 0 ? 'text-amber-600' : 'text-[#88C13E]'} font-bold ml-1`}>({formatIdsForDisplay(node.id)})</span>
+                  {node.nodeName} <span className={`${hasError || isDuplicate ? 'text-amber-600' : 'text-[#88C13E]'} font-bold ml-1`}>({formatIdsForDisplay(node.id, node.type)})</span>
                 </h4>
                 {incompleteCount > 0 && <span className="bg-amber-100 text-amber-700 text-[8px] font-black px-2 py-0.5 rounded-full uppercase">Revisar {incompleteCount} items</span>}
                 
@@ -253,7 +268,6 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({ analysisId, result, searc
     }, 0);
   }, [filteredNodes]);
 
-  // Detección de nudos faltantes corregida
   const missingNodes = useMemo(() => {
     const allIds = new Set<number>();
     result.nodes.forEach(node => {
@@ -291,11 +305,24 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({ analysisId, result, searc
 
   const isAnythingToReport = unifiedNodesSummary.length > 0 || missingNodes.length > 0;
 
-  // Helper para formatear visualmente IDs individuales
-  const formatIdsForDisplay = (idStr: string) => {
+  const formatIdsForDisplay = (idStr: string, type: string) => {
     const matches = idStr.match(/\d+/g);
     if (!matches) return idStr;
-    return matches.map(m => m.padStart(2, '0')).join(', ');
+    
+    const prefixMap: Record<string, string> = {
+      'Corte': 'C',
+      'Ventosa': 'V',
+      'Desague': 'D',
+      'Reductora': 'R',
+      'Numerico': ''
+    };
+    
+    const prefix = prefixMap[type] || '';
+    
+    return matches.map(m => {
+      const num = parseInt(m, 10);
+      return prefix ? `${prefix}-${num}` : m.padStart(2, '0');
+    }).join(', ');
   };
 
   return (
@@ -337,9 +364,9 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({ analysisId, result, searc
               <div className="space-y-1.5">
                 {unifiedNodesSummary.map((node, index) => (
                    <p key={index} className="text-[10px] text-green-700 font-bold uppercase leading-relaxed opacity-90">
-                     Para <span className="text-green-900 font-black">"{node.nodeName}"</span>, se unificó el esquema que contenía los nudos <span className="text-green-900 font-black">{formatIdsForDisplay(node.sourceGroupings![0])}</span> y {node.sourceGroupings!.slice(1).map((group, i) => (
+                     Para <span className="text-green-900 font-black">"{node.nodeName}"</span>, se unificó el esquema que contenía los nudos <span className="text-green-900 font-black">{formatIdsForDisplay(node.sourceGroupings![0], node.type)}</span> y {node.sourceGroupings!.slice(1).map((group, i) => (
                         <span key={i}>
-                            otro que contenía <span className="text-green-900 font-black">{formatIdsForDisplay(group)}</span>{i < node.sourceGroupings!.length - 2 ? ' y ' : ''}
+                            otro que contenía <span className="text-green-900 font-black">{formatIdsForDisplay(group, node.type)}</span>{i < node.sourceGroupings!.length - 2 ? ' y ' : ''}
                         </span>
                     ))}.
                    </p>

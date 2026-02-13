@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import FileUploader from './components/FileUploader.tsx';
 import ResultDisplay from './components/ResultDisplay.tsx';
@@ -116,9 +115,8 @@ const App: React.FC = () => {
     if (savedCredits !== null) setCredits(parseInt(savedCredits));
   }, []);
 
-  // Guardado Automático con Indicador Visual
   useEffect(() => {
-    if (projects.length > 0) {
+    if (projects.length > 0 || libraryNodes.length > 0) {
       setIsAutoSaving(true);
       localStorage.setItem('hidrogestion_v10_projects', JSON.stringify(projects));
       localStorage.setItem('hidrogestion_v10_library', JSON.stringify(libraryNodes));
@@ -484,6 +482,36 @@ const App: React.FC = () => {
   const handleSaveToDrive = async () => {
     alert("Esta funcionalidad requiere configuración de API de Google Drive.");
     setShowSaveModal(false);
+  };
+
+  // --- Manejo de Biblioteca ---
+  const handleExportLibrary = () => {
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(libraryNodes, null, 2));
+    const downloadAnchorNode = document.createElement('a');
+    downloadAnchorNode.setAttribute("href", dataStr);
+    downloadAnchorNode.setAttribute("download", "BIBLIOTECA_ESTANDAR_HIDROGESTION.json");
+    document.body.appendChild(downloadAnchorNode);
+    downloadAnchorNode.click();
+    downloadAnchorNode.remove();
+    setNotification('Biblioteca exportada.');
+  };
+
+  const handleImportLibrary = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const imported = JSON.parse(e.target?.result as string);
+        if (Array.isArray(imported)) {
+          setLibraryNodes(prev => [...prev, ...imported]);
+          setNotification('Biblioteca importada con éxito.');
+        } else {
+          throw new Error("Formato inválido");
+        }
+      } catch (err) {
+        alert("El archivo no es una biblioteca válida");
+      }
+    };
+    reader.readAsText(file);
   };
 
   // --- Manejo de Capítulos (Categorías) ---
@@ -886,6 +914,8 @@ const App: React.FC = () => {
             isCategoryActive={!!activeCategoryId}
             onUpdateNode={handleUpdateLibraryNode}
             onRemoveNode={handleRemoveLibraryNode}
+            onExportLibrary={handleExportLibrary}
+            onImportLibrary={handleImportLibrary}
           />
         )}
         

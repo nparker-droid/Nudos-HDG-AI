@@ -1,5 +1,4 @@
-
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { LibraryNode } from '../types';
 
 interface LibraryModalProps {
@@ -9,11 +8,23 @@ interface LibraryModalProps {
   isCategoryActive: boolean;
   onUpdateNode: (libraryId: string, updates: Partial<LibraryNode>) => void;
   onRemoveNode: (libraryId: string) => void;
+  onExportLibrary: () => void;
+  onImportLibrary: (file: File) => void;
 }
 
-const LibraryModal: React.FC<LibraryModalProps> = ({ nodes, onClose, onUseNode, isCategoryActive, onUpdateNode, onRemoveNode }) => {
+const LibraryModal: React.FC<LibraryModalProps> = ({ 
+  nodes, 
+  onClose, 
+  onUseNode, 
+  isCategoryActive, 
+  onUpdateNode, 
+  onRemoveNode,
+  onExportLibrary,
+  onImportLibrary
+}) => {
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [editedName, setEditedName] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleStartEdit = (node: LibraryNode) => {
     setEditingNodeId(node.libraryId);
@@ -32,6 +43,12 @@ const LibraryModal: React.FC<LibraryModalProps> = ({ nodes, onClose, onUseNode, 
     handleCancelEdit();
   };
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      onImportLibrary(e.target.files[0]);
+    }
+  };
+
   return (
     <div className="fixed inset-0 bg-[#002d50]/90 backdrop-blur-md z-[100] flex items-center justify-center p-6">
       <div className="bg-white w-full max-w-4xl rounded-[3rem] overflow-hidden shadow-2xl animate-in zoom-in-95 duration-300 max-h-[90vh] flex flex-col">
@@ -40,9 +57,32 @@ const LibraryModal: React.FC<LibraryModalProps> = ({ nodes, onClose, onUseNode, 
             <h2 className="text-2xl font-black text-[#004071] uppercase tracking-tighter">Biblioteca de Nudos Estándar</h2>
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Recursos re-utilizables para tus proyectos</p>
           </div>
-          <button onClick={onClose} className="w-10 h-10 rounded-full hover:bg-slate-200 flex items-center justify-center transition-colors">
-            <i className="fa-solid fa-xmark text-slate-400"></i>
-          </button>
+          <div className="flex items-center gap-4">
+            <button 
+              onClick={onExportLibrary}
+              className="px-4 py-2 bg-slate-100 text-[#004071] rounded-xl text-[9px] font-black uppercase hover:bg-slate-200 transition-all flex items-center gap-2"
+              title="Exportar base de datos de nudos"
+            >
+              <i className="fa-solid fa-file-export"></i> Exportar
+            </button>
+            <button 
+              onClick={() => fileInputRef.current?.click()}
+              className="px-4 py-2 bg-slate-100 text-[#004071] rounded-xl text-[9px] font-black uppercase hover:bg-slate-200 transition-all flex items-center gap-2"
+              title="Importar base de datos de nudos"
+            >
+              <i className="fa-solid fa-file-import"></i> Importar
+            </button>
+            <input 
+              type="file" 
+              ref={fileInputRef} 
+              onChange={handleFileChange} 
+              className="hidden" 
+              accept=".json" 
+            />
+            <button onClick={onClose} className="w-10 h-10 rounded-full hover:bg-slate-200 flex items-center justify-center transition-colors">
+              <i className="fa-solid fa-xmark text-slate-400"></i>
+            </button>
+          </div>
         </div>
         <div className="flex-grow overflow-y-auto p-10 space-y-4">
           {nodes.length === 0 ? (
