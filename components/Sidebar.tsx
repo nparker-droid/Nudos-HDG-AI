@@ -1,6 +1,6 @@
 
 import React, { useRef } from 'react';
-import { Project } from '../types';
+import { Project } from '../types.ts';
 
 /**
  * Componente Visual del Logo corporativo

@@ -1,7 +1,7 @@
 
 import React from 'react';
-import { Project, HydraulicNode } from '../types';
-import { LOGO_BASE64 } from '../logoData';
+import { Project, HydraulicNode } from '../types.ts';
+import { LOGO_BASE64 } from '../logoData.ts';
 import { jsPDF } from 'jspdf';
 
 interface AuditReportModalProps {

@@ -1,7 +1,8 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 // Fix: Added missing FileAnalysis type import.
-import { AnalysisResult, HydraulicNode, Piece, NodeMaterial, FileAnalysis, Project } from '../types';
-import ResultDisplay from './ResultDisplay';
+import { AnalysisResult, HydraulicNode, Piece, NodeMaterial, FileAnalysis, Project } from '../types.ts';
+import ResultDisplay from './ResultDisplay.tsx';
 
 interface AnalysisCardProps {
   analysis: FileAnalysis;

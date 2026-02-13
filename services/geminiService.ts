@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
-import { AnalysisResult, NodeMaterial } from "../types";
+import { AnalysisResult, NodeMaterial } from "../types.ts";
 
 /**
  * Prompt de sistema: Define el comportamiento y las reglas de negocio para la IA.

@@ -1,6 +1,7 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
-import { AnalysisResult, HydraulicNode, Piece, NodeMaterial, Project } from '../types';
-import AuditReportModal from './AuditReportModal';
+import { AnalysisResult, HydraulicNode, Piece, NodeMaterial, Project } from '../types.ts';
+import AuditReportModal from './AuditReportModal.tsx';
 
 interface ResultDisplayProps {
   analysisId: string;
@@ -423,7 +424,7 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({ analysisId, result, searc
             project={project}
             repeatedNodes={unifiedNodesSummary}
             // Fix: Explicitly type sort parameters to resolve a TypeScript type inference error.
-            missingNodes={Array.from(nodesToReportMissing).sort((a: number,b: number) => a - b)}
+            missingNodes={Array.from(nodesToReportMissing).sort((a: number, b: number) => a - b)}
             onClose={() => setShowAuditReportModal(false)}
         />
       )}

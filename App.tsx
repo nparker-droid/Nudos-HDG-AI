@@ -1,13 +1,13 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import FileUploader from './components/FileUploader';
-import ResultDisplay from './components/ResultDisplay';
-import Sidebar from './components/Sidebar';
-import { analyzeHydraulicPlan } from './services/geminiService';
-import { Project, FileAnalysis, Category, HydraulicNode, Piece, NodeMaterial, LibraryNode } from './types';
-import AnalysisCard from './components/AnalysisCard';
-import AddNodeModal from './components/AddNodeModal';
-import LibraryModal from './components/LibraryModal';
+import FileUploader from './components/FileUploader.tsx';
+import ResultDisplay from './components/ResultDisplay.tsx';
+import Sidebar from './components/Sidebar.tsx';
+import { analyzeHydraulicPlan } from './services/geminiService.ts';
+import { Project, FileAnalysis, Category, HydraulicNode, Piece, NodeMaterial, LibraryNode } from './types.ts';
+import AnalysisCard from './components/AnalysisCard.tsx';
+import AddNodeModal from './components/AddNodeModal.tsx';
+import LibraryModal from './components/LibraryModal.tsx';
 
 const INITIAL_CREDITS = 50;
 
@@ -574,7 +574,7 @@ const App: React.FC = () => {
     } : p));
   };
 
-  // Eliminación de Análisis (Item) con confirmación estética
+  // Eliminación de Análisis (Item) con confirmación de borrado
   const removeAnalysis = (analysisId: string) => {
     if (!activeProjectId || !activeCategoryId) return;
     setDeleteConfirm({ show: true, type: 'analysis', projectId: activeProjectId, analysisId, name: 'Análisis de Imagen' });
@@ -593,7 +593,7 @@ const App: React.FC = () => {
     } : p));
   };
 
-  // Eliminación de Nudo con confirmación estética
+  // Eliminación de Nudo con confirmación de borrado
   const handleRemoveNode = (analysisId: string, nodeId: string) => {
     const analysis = activeCategory?.analyses.find(a => a.id === analysisId);
     const node = analysis?.result?.nodes.find(n => n.id === nodeId);
@@ -615,7 +615,7 @@ const App: React.FC = () => {
     } else if (type === 'analysis') {
       setProjects(prev => prev.map(p => p.id === activeProjectId ? {
         ...p, categories: p.categories.map(c => c.id === activeCategoryId ? {
-          ...c, analyses: c.analyses.filter(a => a.id !== analysisId)
+          ...c, analyses: c.analyses.filter(a => a.id === analysisId)
         } : c)
       } : p));
     } else if (type === 'node') {
