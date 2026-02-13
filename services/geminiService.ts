@@ -1,4 +1,5 @@
-import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
+
+import { GoogleGenAI, GenerateContentResponse, Type } from "@google/genai";
 import { AnalysisResult } from "../types.ts";
 
 const SYSTEM_PROMPT = `
@@ -15,73 +16,91 @@ REGLAS DE INTERPRETACIÓN:
 RESPONDE SIEMPRE EN FORMATO JSON ESTRUCTURADO.
 `;
 
+let inFlight = false;
+
 export async function analyzeHydraulicPlan(base64Data: string): Promise<AnalysisResult> {
-  // Inicialización según directrices del SDK usando el entorno global
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || "" });
-  
-  const mimeTypeMatch = base64Data.match(/^data:([^;]+);base64,/);
-  const mimeType = mimeTypeMatch ? mimeTypeMatch[1] : "image/png";
-  const base64Clean = base64Data.split(',')[1] || base64Data;
+  if (inFlight) {
+    throw new Error("Análisis en curso. Espera a que termine.");
+  }
 
-  /* console.log("DEPLOY TEST 999"); */
+  inFlight = true;
 
-  const response: GenerateContentResponse = await ai.models.generateContent({
-    /* model: 'gemini-3-pro-preview', // Modelo de alta capacidad para razonamiento técnico */
-    model: "gemini-1.5-flash",
+  try {
+    const apiKey = (process.env.GEMINI_API_KEY || process.env.API_KEY || "").trim();
+    if (!apiKey) throw new Error("Falta GEMINI_API_KEY en el entorno (Vercel).");
 
-    contents: [ 
-      {
-        parts: [
-          { inlineData: { mimeType, data: base64Clean } }, 
-          { text: "Analiza exhaustivamente este cuadro de nudos. Identifica cada nudo por su número, lista todas sus piezas especiales con material, diámetro y cantidad, y cuenta los anclajes de hormigón requeridos." }
-        ] 
-      }
-    ],
-    config: {
-      systemInstruction: SYSTEM_PROMPT,
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          nodes: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                id: { type: Type.STRING, description: "Número del nudo (ej: 01, 15, 22)" },
-                nodeName: { type: Type.STRING, description: "Nombre descriptivo del nudo" },
-                type: { type: Type.STRING, enum: ["Numerico", "Ventosa", "Desague", "Corte", "Reductora"] },
-                anchorageCount: { type: Type.NUMBER, description: "Cantidad de anclajes de hormigón" },
-                pieces: {
-                  type: Type.ARRAY,
-                  items: {
-                    type: Type.OBJECT,
-                    properties: {
-                      name: { type: Type.STRING },
-                      material: { type: Type.STRING },
-                      diameter: { type: Type.STRING },
-                      quantity: { type: Type.INTEGER },
-                      weight: { type: Type.NUMBER }
+    const ai = new GoogleGenAI({ apiKey });
+
+    const mimeTypeMatch = base64Data.match(/^data:([^;]+);base64,/);
+    const mimeType = mimeTypeMatch ? mimeTypeMatch[1] : "image/png";
+    const base64Clean = base64Data.includes(",") ? base64Data.split(",")[1] : base64Data;
+
+    const response: GenerateContentResponse = await ai.models.generateContent({
+      // Usa un modelo que SÍ aparece en tu panel de límites
+      model: "gemini-3-flash",
+      contents: [
+        {
+          parts: [
+            { inlineData: { mimeType, data: base64Clean } },
+            {
+              text:
+                "Analiza exhaustivamente este cuadro de nudos. Identifica cada nudo por su número, " +
+                "lista todas sus piezas especiales con material, diámetro y cantidad, y cuenta los anclajes de hormigón requeridos."
+            }
+          ]
+        }
+      ],
+      config: {
+        systemInstruction: SYSTEM_PROMPT,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            nodes: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  id: { type: Type.STRING, description: "Número del nudo (ej: 01, 15, 22)" },
+                  nodeName: { type: Type.STRING, description: "Nombre descriptivo del nudo" },
+                  type: {
+                    type: Type.STRING,
+                    enum: ["Numerico", "Ventosa", "Desague", "Corte", "Reductora"]
+                  },
+                  anchorageCount: { type: Type.NUMBER, description: "Cantidad de anclajes de hormigón" },
+                  pieces: {
+                    type: Type.ARRAY,
+                    items: {
+                      type: Type.OBJECT,
+                      properties: {
+                        name: { type: Type.STRING },
+                        material: { type: Type.STRING },
+                        diameter: { type: Type.STRING },
+                        quantity: { type: Type.INTEGER },
+                        weight: { type: Type.NUMBER }
+                      }
                     }
                   }
                 }
               }
-            }
+            },
+            summary: { type: Type.STRING, description: "Breve resumen técnico de los hallazgos" }
           },
-          summary: { type: Type.STRING, description: "Breve resumen técnico de los hallazgos" }
-        },
-        required: ['nodes', 'summary']
-      },
-    },
-  });
+          required: ["nodes", "summary"]
+        }
+      }
+    });
 
-  const text = response.text;
-  if (!text) throw new Error("La IA no devolvió una respuesta válida.");
-  
-  try {
-    return JSON.parse(text) as AnalysisResult;
-  } catch (e) {
-    console.error("Error parseando JSON de Gemini:", text);
-    throw new Error("El formato de respuesta de la IA no es un JSON válido.");
+    const text = response.text;
+    if (!text) throw new Error("La IA no devolvió una respuesta válida.");
+
+    try {
+      return JSON.parse(text) as AnalysisResult;
+    } catch {
+      console.error("Respuesta no-JSON (raw):", text);
+      throw new Error("El formato de respuesta de la IA no es un JSON válido.");
+    }
+  } finally {
+    inFlight = false;
   }
 }
