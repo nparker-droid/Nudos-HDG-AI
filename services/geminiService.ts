@@ -24,7 +24,8 @@ export async function analyzeHydraulicPlan(base64Data: string): Promise<Analysis
   const base64Clean = base64Data.split(',')[1] || base64Data;
 
   const response: GenerateContentResponse = await ai.models.generateContent({
-    model: 'gemini-3-pro-preview', // Modelo de alta capacidad para razonamiento técnico
+    /* model: 'gemini-3-pro-preview', // Modelo de alta capacidad para razonamiento técnico */
+    model: 'gemini-1.5-pro'
     contents: [ 
       {
         parts: [
