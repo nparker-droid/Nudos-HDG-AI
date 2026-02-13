@@ -1,0 +1,7 @@
+{
+  "name": "HIdroScan: Hydraulic Plan Interpreter",
+  "description": "An expert AI assistant that parses hydraulic plan 'Cuadros de Nudos' into structured inventory data using Gemini Vision.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
