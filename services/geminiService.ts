@@ -1,10 +1,6 @@
-
 import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
 import { AnalysisResult, NodeMaterial } from "../types.ts";
 
-/**
- * Prompt de sistema: Define el comportamiento y las reglas de negocio para la IA.
- */
 const SYSTEM_PROMPT = `
 Eres un Asistente Experto en Interpretación de Planos Hidráulicos y Gestión de Inventarios, con un enfoque obsesivo en la precisión del conteo.
 Tu función es procesar exhaustivamente imágenes de "Cuadros de Nudos" y convertirlos en datos estructurados. No debes omitir ninguna pieza y tu conteo debe ser exacto.
@@ -41,7 +37,9 @@ Reglas Generales de Extracción:
 `;
 
 export async function analyzeHydraulicPlan(base64Data: string): Promise<AnalysisResult> {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  // Inicialización diferida para evitar errores de carga en Vercel
+  const apiKey = (window as any).process?.env?.API_KEY || "";
+  const ai = new GoogleGenAI({ apiKey });
   
   const mimeTypeMatch = base64Data.match(/^data:([^;]+);base64,/);
   const mimeType = mimeTypeMatch ? mimeTypeMatch[1] : "image/png";
@@ -56,7 +54,6 @@ export async function analyzeHydraulicPlan(base64Data: string): Promise<Analysis
 
   const textPrompt = `Analiza la imagen del plano hidráulico y extrae el inventario de nudos.`;
 
-  // Fix: Updated model and added response schema for robust JSON output.
   const response: GenerateContentResponse = await ai.models.generateContent({
     model: 'gemini-3-pro-preview',
     contents: [ 
@@ -116,7 +113,6 @@ export async function analyzeHydraulicPlan(base64Data: string): Promise<Analysis
   if (!text) throw new Error("Respuesta vacía de la IA");
   
   try {
-    // Fix: With JSON response type set, markdown cleaning is not necessary.
     const cleanText = text.trim();
     return JSON.parse(cleanText) as AnalysisResult;
   } catch (e) {

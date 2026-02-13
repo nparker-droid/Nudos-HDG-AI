@@ -8,8 +8,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap');
-        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
-        .mono { font-family: 'JetBrains Mono', monospace; }
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; margin: 0; }
         
         #root:empty {
             display: flex;
@@ -17,6 +16,7 @@
             justify-content: center;
             height: 100vh;
             width: 100vw;
+            background: #f8fafc;
         }
         #root:empty::after {
             content: "";
@@ -30,12 +30,7 @@
         @keyframes spin { to { transform: rotate(360deg); } }
     </style>
     <script>
-        /**
-         * SHIM CRÍTICO: Define el objeto process para evitar errores de referencia
-         * en el navegador cuando el SDK de Gemini busca process.env.API_KEY.
-         * Vercel inyectará las variables de entorno en el entorno de ejecución, 
-         * pero este shim previene que la aplicación se bloquee (pantalla blanca).
-         */
+        // SHIM GLOBAL: Previene ReferenceError: process is not defined
         window.process = { env: { API_KEY: "" } };
     </script>
     <script type="importmap">
@@ -54,11 +49,7 @@
 </head>
 <body>
     <div id="root"></div>
-
-    <!-- Cargador esm.sh/run para ejecutar TypeScript directamente -->
-    <script type="module">
-      import { run } from "https://esm.sh/run";
-      run("./index.tsx");
-    </script>
+    <!-- Cargador esm.sh/run: Se encarga de la transpilación TSX -->
+    <script type="module" src="https://esm.sh/run" data-main="./index.tsx"></script>
 </body>
 </html>
