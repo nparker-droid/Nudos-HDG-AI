@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -30,6 +29,15 @@
         }
         @keyframes spin { to { transform: rotate(360deg); } }
     </style>
+    <script>
+        /**
+         * SHIM CRÍTICO: Define el objeto process para evitar errores de referencia
+         * en el navegador cuando el SDK de Gemini busca process.env.API_KEY.
+         * Vercel inyectará las variables de entorno en el entorno de ejecución, 
+         * pero este shim previene que la aplicación se bloquee (pantalla blanca).
+         */
+        window.process = { env: { API_KEY: "" } };
+    </script>
     <script type="importmap">
 {
   "imports": {
@@ -47,11 +55,10 @@
 <body>
     <div id="root"></div>
 
-    <!-- 
-      Esta es la solución al problema de la pantalla en blanco:
-      Declaramos el 'entry file' directamente en la etiqueta de script. 
-      'esm.sh/run' se encarga de leer './index.tsx', transpilarlo y ejecutarlo.
-    -->
-    <script type="module" src="https://esm.sh/run" data-main="./index.tsx"></script>
+    <!-- Cargador esm.sh/run para ejecutar TypeScript directamente -->
+    <script type="module">
+      import { run } from "https://esm.sh/run";
+      run("./index.tsx");
+    </script>
 </body>
 </html>
