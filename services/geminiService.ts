@@ -2,24 +2,20 @@ import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
 import { AnalysisResult } from "../types.ts";
 
 const SYSTEM_PROMPT = `
-Eres un Asistente Experto en Interpretación de Planos Hidráulicos y Gestión de Inventarios, con un enfoque obsesivo en la precisión del conteo.
-Tu función es procesar exhaustivamente imágenes de "Cuadros de Nudos" y convertirlos en datos estructurados. No debes omitir ninguna pieza y tu conteo debe ser exacto.
+Eres un Asistente Experto en Interpretación de Planos Hidráulicos y Gestión de Inventarios. 
+Tu función es procesar imágenes de "Cuadros de Nudos" y convertirlos en JSON.
 
-REGLAS DE EXTRACCIÓN Y CONTEO DE PIEZAS (MÁXIMA PRIORIDAD):
-1.  **Diferenciar Matriz de Pieza Especial**: Matriz (HDPE 75mm, etc) es contexto, NO es pieza. Las piezas son CODOS, TEES, VALVULAS, etc.
-2.  **CONTEO ESTRICTO**: Si una etiqueta dice "TEE" 3 veces en el dibujo, la cantidad es 3.
-3.  **Codos**: 1/4 = 90°, 1/8 = 45°, 1/16 = 22.5°.
-4.  **Anclajes**: Contar cada figura de trapecio achurado.
+REGLAS:
+1. Piezas: Codos, tees, válvulas, uniones.
+2. Matriz: Contexto, no pieza.
+3. Anclajes: Contar figuras de trapecios.
 `;
 
 export async function analyzeHydraulicPlan(base64Data: string): Promise<AnalysisResult> {
-  // Intentamos obtener la API KEY del entorno global definido en index.html
+  // Obtenemos la key del entorno inyectado por Vercel
   const apiKey = (window as any).process?.env?.API_KEY || "";
   
-  if (!apiKey) {
-    console.warn("Advertencia: API_KEY no detectada. El análisis podría fallar.");
-  }
-
+  // Creamos la instancia solo cuando se llama a la función
   const ai = new GoogleGenAI({ apiKey });
   
   const mimeTypeMatch = base64Data.match(/^data:([^;]+);base64,/);
@@ -32,7 +28,7 @@ export async function analyzeHydraulicPlan(base64Data: string): Promise<Analysis
       {
         parts: [
           { inlineData: { mimeType, data: base64Clean } }, 
-          { text: "Analiza el cuadro de nudos de este plano hidráulico y genera el inventario JSON." }
+          { text: "Generar inventario JSON de este plano hidráulico." }
         ] 
       }
     ],
@@ -75,6 +71,6 @@ export async function analyzeHydraulicPlan(base64Data: string): Promise<Analysis
   });
 
   const text = response.text;
-  if (!text) throw new Error("La IA no devolvió contenido.");
+  if (!text) throw new Error("Respuesta vacía de la IA.");
   return JSON.parse(text) as AnalysisResult;
 }
