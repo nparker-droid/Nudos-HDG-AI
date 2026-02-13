@@ -2,11 +2,15 @@
 {
   "headers": [
     {
-      "source": "/(.*).(ts|tsx)",
+      "source": "/(.*)\\.(ts|tsx)",
       "headers": [
         {
           "key": "Content-Type",
-          "value": "application/javascript"
+          "value": "application/javascript; charset=utf-8"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "no-store, max-age=0"
         }
       ]
     }
