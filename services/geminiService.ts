@@ -8,8 +8,9 @@ REGLAS: Identifica Codos, Tees, Válvulas, Diámetros y Anclajes.
 `;
 
 export async function analyzeHydraulicPlan(base64Data: string): Promise<AnalysisResult> {
-  // Inicialización limpia usando la variable de entorno
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || "" });
+  // Obtenemos la API_KEY directamente del objeto process inyectado globalmente
+  const apiKey = (window as any).process?.env?.API_KEY || "";
+  const ai = new GoogleGenAI({ apiKey });
   
   const mimeTypeMatch = base64Data.match(/^data:([^;]+);base64,/);
   const mimeType = mimeTypeMatch ? mimeTypeMatch[1] : "image/png";
@@ -21,7 +22,7 @@ export async function analyzeHydraulicPlan(base64Data: string): Promise<Analysis
       {
         parts: [
           { inlineData: { mimeType, data: base64Clean } }, 
-          { text: "Genera el inventario completo de este plano hidráulico en formato JSON." }
+          { text: "Genera el inventario completo de este plano hidráulico en formato JSON basándote en los cuadros de nudos visibles." }
         ] 
       }
     ],

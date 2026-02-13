@@ -37,64 +37,29 @@
             font-size: 16px;
         }
         @keyframes spin { to { transform: rotate(360deg); } }
-
-        .error-overlay {
-            position: fixed;
-            inset: 0;
-            background: white;
-            z-index: 9999;
-            display: none;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            text-align: center;
-            padding: 2rem;
-        }
     </style>
     <script>
-        // Configuración de entorno global requerida por el SDK de Gemini
+        // Shim para process.env requerido por el SDK de Gemini
         window.process = {
             env: {
-                API_KEY: "" // Inyectada por el entorno
+                API_KEY: "" 
             }
         };
-
-        // Captura de errores para diagnóstico visual
-        window.addEventListener('error', function(event) {
-            console.error('Error detectado:', event.error);
-            const overlay = document.getElementById('error-ui');
-            const msg = document.getElementById('error-msg');
-            if (overlay && msg) {
-                overlay.style.display = 'flex';
-                msg.textContent = event.message || 'Error desconocido al cargar módulos.';
-            }
-        });
     </script>
-<script type="importmap">
+    <script type="importmap">
 {
   "imports": {
-    "react": "https://esm.sh/react@^19.2.4",
+    "react": "https://esm.sh/react@18.2.0",
+    "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+    "@google/genai": "https://esm.sh/@google/genai@1.41.0",
+    "jspdf": "https://esm.sh/jspdf@2.5.1",
     "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
-    "react/": "https://esm.sh/react@^19.2.4/",
-    "@google/genai": "https://esm.sh/@google/genai@^1.41.0",
-    "jspdf": "https://esm.sh/jspdf@^4.1.0"
+    "react/": "https://esm.sh/react@^19.2.4/"
   }
 }
 </script>
 </head>
 <body>
     <div id="root"></div>
-
-    <div id="error-ui" class="error-overlay">
-        <i class="fa-solid fa-triangle-exclamation text-red-500 text-5xl mb-4"></i>
-        <h2 class="text-xl font-black text-slate-800 uppercase">Fallo en la Carga del Sistema</h2>
-        <p id="error-msg" class="text-slate-500 mt-2 text-sm max-w-md"></p>
-        <button onclick="location.reload()" class="mt-8 px-8 py-3 bg-[#004071] text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl">
-            Reintentar Conexión
-        </button>
-    </div>
-
-    <!-- CARGADOR ESM.SH: Esta es la forma correcta y única de usarlo para TSX -->
-    <script src="https://esm.sh/run" data-main="./index.tsx"></script>
 </body>
 </html>
