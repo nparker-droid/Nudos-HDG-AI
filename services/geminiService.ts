@@ -23,9 +23,11 @@ export async function analyzeHydraulicPlan(base64Data: string): Promise<Analysis
   const mimeType = mimeTypeMatch ? mimeTypeMatch[1] : "image/png";
   const base64Clean = base64Data.split(',')[1] || base64Data;
 
+  console.log("USANDO GeminiService.ts - MODELO:", "gemini-1.5-pro");
+
   const response: GenerateContentResponse = await ai.models.generateContent({
     /* model: 'gemini-3-pro-preview', // Modelo de alta capacidad para razonamiento técnico */
-    model: "ESTO-NO-EXISTE",
+    model: "gemini-1.5-pro",
     contents: [ 
       {
         parts: [
