@@ -99,7 +99,7 @@ const NodeCard: React.FC<NodeCardProps> = ({ node, index, onUpdate, onRemove, on
   const [editedAnchorageCount, setEditedAnchorageCount] = useState(node.anchorageCount);
 
   const incompleteCount = node.pieces.filter(p => !p.name || !p.material || !p.diameter || p.quantity <= 0).length;
-  // Solo marcamos como error para verificación visual (Naranja) si faltan datos técnicos.
+  // EL BORDE SÓLO ES NARANJA SI FALTAN DATOS TÉCNICOS. SI TODO ESTÁ COMPLETO, ES VERDE.
   const hasError = incompleteCount > 0;
 
   const handleSaveHeader = () => {
@@ -128,10 +128,6 @@ const NodeCard: React.FC<NodeCardProps> = ({ node, index, onUpdate, onRemove, on
   
   const handleSaveAnchorage = () => {
     onUpdate({ anchorageCount: editedAnchorageCount });
-    setIsEditingAnchorage(false);
-  };
-
-  const handleCancelAnchorageEdit = () => {
     setIsEditingAnchorage(false);
   };
 
@@ -184,7 +180,7 @@ const NodeCard: React.FC<NodeCardProps> = ({ node, index, onUpdate, onRemove, on
                        value={editedAnchorageCount}
                        onChange={e => setEditedAnchorageCount(parseInt(e.target.value, 10) || 0)}
                        onBlur={handleSaveAnchorage}
-                       onKeyDown={e => { if (e.key === 'Enter') handleSaveAnchorage(); if (e.key === 'Escape') handleCancelAnchorageEdit(); }}
+                       onKeyDown={e => { if (e.key === 'Enter') handleSaveAnchorage(); if (e.key === 'Escape') setIsEditingAnchorage(false); }}
                        className="w-16 bg-white border border-[#88C13E] rounded-lg px-2 py-0.5 text-center font-black text-[#004071]"
                        autoFocus
                      />
