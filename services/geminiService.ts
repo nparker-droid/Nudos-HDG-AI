@@ -1,3 +1,4 @@
+
 // @google/genai SDK used for hydraulic plan analysis
 import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
 import { AnalysisResult } from "../types.ts";
@@ -9,9 +10,10 @@ Tu objetivo es analizar imágenes de "Cuadros de Nudos" y extraer un inventario 
 REGLAS CRÍTICAS DE ESCANEO:
 1. IDENTIFICACIÓN DE NUDOS: Debes buscar números correlativos (01, 02, 03...) en títulos, subtítulos, dentro de paréntesis (ej: "(01, 02, 03)") y en etiquetas laterales. NO omitas nudos.
 2. CORRELATIVIDAD: Verifica que la secuencia sea lógica. Si detectas un salto (ej: del 05 al 08), realiza un segundo escaneo profundo en la imagen para encontrar los números intermedios.
-3. UNIFICACIÓN DE ESQUEMAS: Si un mismo dibujo o detalle gráfico aplica a varios números de nudo (ej: un detalle que dice "Codo 90° (01, 02, 03, 04)"), genera UN SOLO objeto 'HydraulicNode'. 
-   - En el campo 'id', pon el rango o lista completa encontrada.
-   - En el campo 'sourceGroupings', incluye un array con cada número individual detectado.
+3. UNIFICACIÓN DE ESQUEMAS: Si encuentras dos o más bloques de dibujo/detalles gráficos que son VISUALMENTE IDÉNTICOS pero corresponden a diferentes nudos (ej: un detalle para "01, 02" y otro detalle idéntico para "03, 04"), genera UN SOLO objeto 'HydraulicNode'.
+   - En el campo 'id', pon la lista completa de nudos (ej: "01, 02, 03, 04").
+   - En el campo 'sourceGroupings', incluye un array de strings donde cada string sea el texto de identificación de cada bloque de dibujo independiente encontrado (ej: ["01, 02", "03, 04"]). 
+   - SI EL PLANO YA TRAE UN SOLO DIBUJO PARA VARIOS NUDOS (ej: un dibujo que dice "01 al 05"), el array 'sourceGroupings' debe tener UN solo elemento: ["01 al 05"].
 4. PIEZAS: Extrae Codos (con grados), Tees, Válvulas, Uniones, Reducciones. Identifica Material y Diámetro de cada una.
 5. ANCLAJES: Cuenta los bloques de hormigón (trapecios achurados) específicos de cada detalle.
 6. MATRIZ: La tubería matriz es contexto, no una pieza del nudo.
@@ -29,10 +31,8 @@ export async function analyzeHydraulicPlan(base64Data: string): Promise<Analysis
   inFlight = true;
 
   try {
-    const apiKey = process.env.API_KEY;
-    if (!apiKey) throw new Error("Falta la API Key. Configura API_KEY en el entorno.");
-
-    const ai = new GoogleGenAI({ apiKey });
+    // Initializing Gemini client using process.env.API_KEY directly as per @google/genai guidelines
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
     const mimeTypeMatch = base64Data.match(/^data:([^;]+);base64,/);
     const mimeType = mimeTypeMatch ? mimeTypeMatch[1] : "image/png";
@@ -51,8 +51,7 @@ export async function analyzeHydraulicPlan(base64Data: string): Promise<Analysis
             text:
               "Realiza un análisis exhaustivo y detallado de este cuadro de nudos. " +
               "Presta especial atención a los números correlativos. Identifica CADA nudo, incluso si comparten el mismo esquema. " +
-              "Si varios nudos usan el mismo esquema, agrúpalos y nómbralos en el campo 'id' y 'sourceGroupings'. " +
-              "Para cada esquema, lista piezas, materiales, diámetros y cuenta los anclajes de hormigón.",
+              "Si unificas bloques de dibujo idénticos que estaban separados en el plano, refléjalo en 'sourceGroupings' con un elemento por cada bloque original.",
           },
         ],
       },
@@ -72,7 +71,7 @@ export async function analyzeHydraulicPlan(base64Data: string): Promise<Analysis
                   sourceGroupings: { 
                     type: Type.ARRAY, 
                     items: { type: Type.STRING },
-                    description: "Lista de IDs individuales que fueron unificados en este esquema"
+                    description: "Lista de IDs/rangos por cada bloque de dibujo físico independiente que fue unificado"
                   },
                   nodeName: { type: Type.STRING, description: "Nombre descriptivo del nudo (ej: CODO DE 90 GRADOS)" },
                   type: {

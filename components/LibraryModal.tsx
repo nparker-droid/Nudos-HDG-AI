@@ -12,6 +12,22 @@ interface LibraryModalProps {
   onImportLibrary: (file: File) => void;
 }
 
+const SUGGESTED_PRICES: Record<string, number> = {
+  'VÁLVULA': 450000,
+  'CODO': 45000,
+  'TEE': 65000,
+  'REDUCCIÓN': 35000,
+  'TUBO': 12000,
+  'UNION': 25000,
+  'COPLA': 22000,
+  'STUB END': 28000,
+  'FLANGE': 42000,
+  'JUNTA': 55000,
+  'PERNOS': 1500,
+  'HORMIGÓN': 145000,
+  'ANCLAJE': 180000
+};
+
 const LibraryModal: React.FC<LibraryModalProps> = ({ 
   nodes, 
   onClose, 
@@ -49,6 +65,85 @@ const LibraryModal: React.FC<LibraryModalProps> = ({
     }
   };
 
+  const handleExportLibraryPartsList = () => {
+    if (nodes.length === 0) return;
+
+    const materialData = new Map<string, {
+      pieceMap: Map<string, {
+        name: string;
+        unit: string;
+        quantity: number;
+        price: number;
+        totalWeight: number;
+      }>,
+      materialWeight: number
+    }>();
+
+    nodes.forEach(node => {
+      node.pieces.forEach(p => {
+        const materialKey = (p.material || 'Otro').toUpperCase();
+        if (!materialData.has(materialKey)) {
+          materialData.set(materialKey, { pieceMap: new Map(), materialWeight: 0 });
+        }
+
+        const mGroup = materialData.get(materialKey)!;
+        const key = `${p.name}-${p.diameter}-${p.union || 'S/U'}`.toUpperCase();
+        const existing = mGroup.pieceMap.get(key);
+
+        const qty = p.quantity;
+        const individualWeight = p.weight || 0;
+        const addedWeight = qty * individualWeight;
+
+        mGroup.materialWeight += addedWeight;
+
+        if (existing) {
+          existing.quantity += qty;
+          existing.totalWeight += addedWeight;
+        } else {
+          const lowerName = p.name.toLowerCase();
+          let unit = "Un";
+          if (lowerName.includes('tubo') || lowerName.includes('cañería')) unit = "m";
+          else if (lowerName.includes('hormigón')) unit = "m3";
+
+          let suggestedPrice = 0;
+          const priceKey = Object.keys(SUGGESTED_PRICES).find(k => lowerName.includes(k.toLowerCase()));
+          if (priceKey) suggestedPrice = SUGGESTED_PRICES[priceKey];
+
+          mGroup.pieceMap.set(key, {
+            name: `${p.name} ${p.diameter} ${p.union || ''}`.trim(),
+            unit: unit,
+            quantity: qty,
+            price: suggestedPrice,
+            totalWeight: addedWeight
+          });
+        }
+      });
+    });
+
+    let csvContent = "\ufeff";
+    const sortedMaterials = Array.from(materialData.keys()).sort();
+
+    sortedMaterials.forEach(material => {
+      const group = materialData.get(material)!;
+      csvContent += `# --- BLOQUE MATERIAL: ${material} (Peso Total: ${group.materialWeight.toFixed(2)} kg) --- #\n`;
+      csvContent += "Nombre;Unidad;Cantidad;Precio Sugerido\n";
+
+      Array.from(group.pieceMap.values()).forEach(item => {
+        csvContent += `${item.name};${item.unit};${item.quantity};${item.price || ''}\n`;
+      });
+      csvContent += "\n";
+    });
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `LISTADO_PIEZAS_BIBLIOTECA_HIDROSCAN.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div className="fixed inset-0 bg-[#002d50]/90 backdrop-blur-md z-[100] flex items-center justify-center p-6">
       <div className="bg-white w-full max-w-4xl rounded-[3rem] overflow-hidden shadow-2xl animate-in zoom-in-95 duration-300 max-h-[90vh] flex flex-col">
@@ -58,6 +153,13 @@ const LibraryModal: React.FC<LibraryModalProps> = ({
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Recursos re-utilizables para tus proyectos</p>
           </div>
           <div className="flex items-center gap-4">
+            <button 
+              onClick={handleExportLibraryPartsList}
+              className="px-4 py-2 bg-[#88C13E] text-white rounded-xl text-[9px] font-black uppercase hover:bg-[#a6bf2e] transition-all flex items-center gap-2 shadow-md"
+              title="Exportar listado consolidado de todas las piezas en la biblioteca"
+            >
+              <i className="fa-solid fa-list-check"></i> Listado Piezas
+            </button>
             <button 
               onClick={onExportLibrary}
               className="px-4 py-2 bg-slate-100 text-[#004071] rounded-xl text-[9px] font-black uppercase hover:bg-slate-200 transition-all flex items-center gap-2"

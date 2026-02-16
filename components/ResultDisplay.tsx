@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { AnalysisResult, HydraulicNode, Piece, NodeMaterial, Project } from '../types.ts';
 import AuditReportModal from './AuditReportModal.tsx';
@@ -99,8 +100,7 @@ const NodeCard: React.FC<NodeCardProps> = ({ node, index, onUpdate, onRemove, on
   const [editedAnchorageCount, setEditedAnchorageCount] = useState(node.anchorageCount);
 
   const incompleteCount = node.pieces.filter(p => !p.name || !p.material || !p.diameter || p.quantity <= 0).length;
-  // EL BORDE SÓLO ES NARANJA SI FALTAN DATOS TÉCNICOS. SI TODO ESTÁ COMPLETO, ES VERDE.
-  const hasError = incompleteCount > 0;
+  const hasError = incompleteCount > 0 || isDuplicate;
 
   const handleSaveHeader = () => {
     onUpdate({ nodeName: editedName, id: editedId });
@@ -168,8 +168,9 @@ const NodeCard: React.FC<NodeCardProps> = ({ node, index, onUpdate, onRemove, on
             ) : (
               <div className="flex items-center group/title gap-2">
                 <h4 className="text-base font-black text-[#004071] uppercase tracking-tighter cursor-pointer" onClick={() => setIsEditingHeader(true)}>
-                  {node.nodeName} <span className={`${hasError || isDuplicate ? 'text-amber-600' : 'text-[#88C13E]'} font-bold ml-1`}>({formatIdsForDisplay(node.id, node.type)})</span>
+                  {node.nodeName} <span className={`${isDuplicate ? 'text-amber-600' : 'text-[#88C13E]'} font-bold ml-1`}>({formatIdsForDisplay(node.id, node.type)})</span>
                 </h4>
+                {isDuplicate && <span className="bg-amber-600 text-white text-[8px] font-black px-2 py-0.5 rounded-full uppercase ml-2 animate-pulse">ID Duplicado en {node.type}</span>}
                 {incompleteCount > 0 && <span className="bg-amber-100 text-amber-700 text-[8px] font-black px-2 py-0.5 rounded-full uppercase">Revisar {incompleteCount} items</span>}
                 
                 {isEditingAnchorage ? (
@@ -265,36 +266,48 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({ analysisId, result, searc
   }, [filteredNodes]);
 
   const missingNodes = useMemo(() => {
-    const allIds = new Set<number>();
+    const idsByType: Record<string, Set<number>> = {
+      Numerico: new Set(),
+      Corte: new Set(),
+      Ventosa: new Set(),
+      Desague: new Set(),
+      Reductora: new Set()
+    };
+
     result.nodes.forEach(node => {
+      const type = node.type || 'Numerico';
       const matches = node.id.match(/\d+/g);
       if (matches) {
         matches.forEach(idStr => {
           const num = parseInt(idStr, 10);
           if (!isNaN(num)) {
-            allIds.add(num);
+            if (!idsByType[type]) idsByType[type] = new Set();
+            idsByType[type].add(num);
           }
         });
       }
     });
 
-    if (allIds.size < 2) return [];
-
-    const sortedIds = Array.from(allIds).sort((a, b) => a - b);
-    const minId = sortedIds[0];
-    const maxId = sortedIds[sortedIds.length - 1];
     const missing: number[] = [];
 
-    for (let i = minId; i <= maxId; i++) {
-      if (!allIds.has(i)) {
-        missing.push(i);
+    Object.entries(idsByType).forEach(([type, set]) => {
+      if (set.size < 2) return;
+      const sorted = Array.from(set).sort((a, b) => a - b);
+      const min = sorted[0];
+      const max = sorted[sorted.length - 1];
+      for (let i = min; i <= max; i++) {
+        if (!set.has(i)) {
+          missing.push(i);
+        }
       }
-    }
-    return missing;
+    });
+
+    return missing.sort((a, b) => a - b);
   }, [result.nodes]);
 
   const unifiedNodesSummary = useMemo(() => {
     if (isManual) return [];
+    // SOLO se consideran unificados si la IA detectó dibujos SEPARADOS y los unió (length > 1)
     return result.nodes
       .filter(node => node.sourceGroupings && node.sourceGroupings.length > 1);
   }, [result.nodes, isManual]);
@@ -336,7 +349,7 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({ analysisId, result, searc
               </p>
               <ul className="list-disc list-inside text-xs text-blue-800 font-bold space-y-1">
                 {unifiedNodesSummary.length > 0 && <li>{unifiedNodesSummary.length} esquema(s) repetido(s) para unificar.</li>}
-                {missingNodes.length > 0 && <li>{missingNodes.length} nudo(s) faltante(s) en la secuencia (para verificar).</li>}
+                {missingNodes.length > 0 && <li>{missingNodes.length} nudo(s) faltante(s) detectados por secuencia de tipo.</li>}
               </ul>
             </div>
             <button
@@ -356,15 +369,15 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({ analysisId, result, searc
               <i className="fa-solid fa-object-group text-xl"></i>
             </div>
             <div className="flex-grow">
-              <h5 className="text-[11px] font-black text-green-900 uppercase tracking-widest mb-2">Observación: Esquemas Repetidos</h5>
+              <h5 className="text-[11px] font-black text-green-900 uppercase tracking-widest mb-2">Observación: Esquemas Repetidos Detectados</h5>
               <div className="space-y-1.5">
                 {unifiedNodesSummary.map((node, index) => (
                    <p key={index} className="text-[10px] text-green-700 font-bold uppercase leading-relaxed opacity-90">
-                     Para <span className="text-green-900 font-black">"{node.nodeName}"</span>, se unificó el esquema que contenía los nudos <span className="text-green-900 font-black">{formatIdsForDisplay(node.sourceGroupings![0], node.type)}</span> y {node.sourceGroupings!.slice(1).map((group, i) => (
+                     Para <span className="text-green-900 font-black">"{node.nodeName}"</span>, se detectaron bloques de dibujo idénticos que contienen a los nudos <span className="text-green-900 font-black">{formatIdsForDisplay(node.sourceGroupings![0], node.type)}</span> y {node.sourceGroupings!.slice(1).map((group, i) => (
                         <span key={i}>
-                            otro que contenía <span className="text-green-900 font-black">{formatIdsForDisplay(group, node.type)}</span>{i < node.sourceGroupings!.length - 2 ? ' y ' : ''}
+                            otro bloque que contenía <span className="text-green-900 font-black">{formatIdsForDisplay(group, node.type)}</span>{i < node.sourceGroupings!.length - 2 ? ' y ' : ''}
                         </span>
-                    ))}.
+                    ))}. Se recomienda unificarlos en un solo detalle para optimizar el plano.
                    </p>
                 ))}
               </div>
@@ -380,9 +393,9 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({ analysisId, result, searc
               <i className="fa-solid fa-search-plus text-xl"></i>
             </div>
             <div className="flex-grow">
-              <h5 className="text-[11px] font-black text-sky-900 uppercase tracking-widest mb-2">Observación: Nudos Faltantes en Secuencia</h5>
+              <h5 className="text-[11px] font-black text-sky-900 uppercase tracking-widest mb-2">Observación: Nudos Faltantes en Secuencia (Independiente)</h5>
               <p className="text-xs text-sky-700 mb-4">
-                Selecciona los nudos que, tras tu verificación, realmente falten en el plano para incluirlos en la minuta.
+                Se han evaluado las secuencias por tipo de nudo (Cámaras, Ventosas, etc) de forma aislada. Selecciona cuáles reportar:
               </p>
               <div className="mb-4">
                 <label className="inline-flex items-center gap-2 px-3 py-1.5 bg-white border-2 border-sky-300 rounded-lg cursor-pointer hover:bg-sky-100 transition-colors font-black text-sky-900 text-xs">
@@ -405,7 +418,7 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({ analysisId, result, searc
                       onChange={() => handleToggleMissingNodeReport(nodeId)}
                       className="h-4 w-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500"
                     />
-                    <span className="text-xs font-bold text-sky-800">NUDO {String(nodeId).padStart(2, '0')}</span>
+                    <span className="text-xs font-bold text-sky-800">ID {String(nodeId).padStart(2, '0')}</span>
                   </label>
                 ))}
               </div>
@@ -458,8 +471,10 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({ analysisId, result, searc
 
       <div className="w-full">
         {filteredNodes.map((node, idx) => {
-          const nodeNumericIds = node.id.match(/\d+/g) || [];
-          const isDuplicate = nodeNumericIds.some(id => duplicateIds.has(id));
+          // Explicitly typing nodeNumericIds to avoid 'never' type inference
+          const nodeNumericIds: string[] = node.id.match(/\d+/g) || [];
+          // Se utiliza la clave compuesta tipo:id para el chequeo de duplicados
+          const isDuplicate = nodeNumericIds.some(id => duplicateIds.has(`${node.type}:${id.toLowerCase()}`));
           
           return (
             <NodeCard 

@@ -141,8 +141,10 @@ const App: React.FC = () => {
           matches.forEach(id => {
             const normalizedId = id.trim().toLowerCase();
             if (normalizedId) {
-              idCount.set(normalizedId, (idCount.get(normalizedId) || 0) + 1);
-              if (idCount.get(normalizedId)! > 1) duplicates.add(normalizedId);
+              // Se añade el tipo a la clave para evitar colisiones entre categorías distintas (C-16 vs V-16)
+              const uniqueKey = `${node.type}:${normalizedId}`;
+              idCount.set(uniqueKey, (idCount.get(uniqueKey) || 0) + 1);
+              if (idCount.get(uniqueKey)! > 1) duplicates.add(uniqueKey);
             }
           });
         }
@@ -508,7 +510,7 @@ const App: React.FC = () => {
           throw new Error("Formato inválido");
         }
       } catch (err) {
-        alert("El archivo no es una biblioteca válida");
+        alert("El archivo no es un biblioteca válida");
       }
     };
     reader.readAsText(file);
