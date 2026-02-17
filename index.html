@@ -1,11 +1,21 @@
+
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>HidroScan - Gestor de Nudos Hidráulicos</title>
+    
+    <!-- PWA y Meta Tags de Aplicación -->
+    <meta name="theme-color" content="#004071">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="HidroScan">
+    <link rel="manifest" href="manifest.json">
+    
     <!-- Favicon Corporativo SVG -->
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI0OCIgZmlsbD0id2hpdGUiIC8+PG1hc2sgaWQ9Im0iPjxjaXJjbGUgY3g9IjUwIiBjeT0iNTAiIHI9IjQ4IiBmaWxsPSJ3aGl0ZSIgLz48L21hc2s+PGcgbWFzaz0idXJsKCNtKSI+PHJlY3QgeD0iMCIgeT0iMCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIyNSIgZmlsbD0iI0Q5RTAyMSIgLz48cmVjdCB4PSIwIiB5PSIyNSIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIyMCIgZmlsbD0iIzg4QzEzRSIgLz48cmVjdCB4PSIwIiB5PSI0NSIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIyMCIgZmlsbD0iIzAwNDA3MSIgLz48cmVjdCB4PSIwIiB5PSI2NSIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIzNSIgZmlsbD0iIzAwMkQ1MCIgLz48L2c+PC9zdmc+">
+    <link rel="apple-touch-icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI0OCIgZmlsbD0id2hpdGUiIC8+PG1hc2sgaWQ9Im0iPjxjaXJjbGUgY3g9IjUwIiBjeT0iNTAiIHI9IjQ4IiBmaWxsPSJ3aGl0ZSIgLz48L21hc2s+PGcgbWFzaz0idXJsKCNtKSI+PHJlY3QgeD0iMCIgeT0iMCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIyNSIgZmlsbD0iI0Q5RTAyMSIgLz48cmVjdCB4PSIwIiB5PSIyNSIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIyMCIgZmlsbD0iIzg4QzEzRSIgLz48cmVjdCB4PSIwIiB5PSI0NSIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIyMCIgZmlsbD0iIzAwNDA3MSIgLz48cmVjdCB4PSIwIiB5PSI2NSIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIzNSIgZmlsbD0iIzAwMkQ1MCIgLz48L2c+PC9zdmc+">
+
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
@@ -92,9 +102,6 @@
 </head>
 <body>
     <div id="root"></div>
-    <!-- Cargador esm.sh: Resuelve TypeScript y dependencias automáticamente -->
-    <!-- <script type="module" src="https://esm.sh/run" data-main="./index.tsx"></script>  -->
-
     <script type="module" src="/index.tsx"></script>
 </body>
 </html>

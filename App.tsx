@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import FileUploader from './components/FileUploader.tsx';
 import ResultDisplay from './components/ResultDisplay.tsx';
@@ -332,8 +333,8 @@ const App: React.FC = () => {
       code: 'HDG-' + Math.floor(1000 + Math.random() * 9000),
       name: '',
       date: new Date().toISOString().split('T')[0],
-      version: '1.0',
       description: '',
+      version: '1.0',
       stage: 'Ingeniería de Detalle',
       commune: '',
       region: ''
@@ -502,7 +503,8 @@ const App: React.FC = () => {
     const expandedNodes: HydraulicNode[] = [];
     rawNodes.forEach(node => {
       const prefix = getPrefixLabel(node.type);
-      const numericIds = node.id.match(/\d+/g) || [];
+      // Fix: Explicitly type numericIds as string[] to avoid 'never' type inference issues
+      const numericIds: string[] = node.id.match(/\d+/g) || [];
       if (numericIds.length > 0) {
         numericIds.forEach(individualId => {
             const formattedId = prefix ? `${prefix}-${parseInt(individualId, 10)}` : individualId.padStart(2, '0');
