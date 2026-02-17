@@ -1,13 +1,12 @@
-
-import React, { useState, useEffect, useMemo } from 'react';
-// Fix: Added missing FileAnalysis type import.
-import { AnalysisResult, HydraulicNode, Piece, NodeMaterial, FileAnalysis, Project } from '../types.ts';
+import React, { useState } from 'react';
+import { HydraulicNode, FileAnalysis, Project } from '../types.ts';
 import ResultDisplay from './ResultDisplay.tsx';
 
 interface AnalysisCardProps {
-  analysis: FileAnalysis;
+  analysis: FileAnalysis & { documentNumber?: number };
   onProcess: (id: string) => void;
   onRemove: (id: string) => void;
+  onUpdateAnalysisName: (id: string, newName: string) => void;
   onUpdateNode: (analysisId: string, nodeId: string, updates: Partial<HydraulicNode>) => void;
   onRemoveNode: (analysisId: string, nodeId: string) => void;
   onSaveToLibrary: (node: HydraulicNode) => void;
@@ -18,25 +17,87 @@ interface AnalysisCardProps {
   activeProject?: Project;
 }
 
-const AnalysisCard: React.FC<AnalysisCardProps> = ({ analysis, onProcess, onRemove, onUpdateNode, onRemoveNode, onSaveToLibrary, searchTerm, duplicateIds, credits, onCopyNode, activeProject }) => {
+const AnalysisCard: React.FC<AnalysisCardProps> = ({ 
+  analysis, 
+  onProcess, 
+  onRemove, 
+  onUpdateAnalysisName,
+  onUpdateNode, 
+  onRemoveNode, 
+  onSaveToLibrary, 
+  searchTerm, 
+  duplicateIds, 
+  credits, 
+  onCopyNode, 
+  activeProject 
+}) => {
   const isManual = !analysis.image;
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [tempName, setTempName] = useState(analysis.customName || `DOCUMENTO N° ${analysis.documentNumber || '-'}`);
+
+  const handleSaveName = () => {
+    onUpdateAnalysisName(analysis.id, tempName);
+    setIsEditingName(false);
+  };
 
   return (
     <div className="bg-white rounded-[2rem] border border-slate-200 shadow-xl overflow-hidden flex flex-col transition-all hover:border-[#88C13E] group w-full mb-10">
+      <div className="px-10 py-4 bg-slate-50 border-b flex justify-between items-center">
+          <div className="flex items-center gap-3 flex-grow">
+            {isEditingName ? (
+              <div className="flex items-center gap-2">
+                <input 
+                  type="text" 
+                  value={tempName} 
+                  onChange={(e) => setTempName(e.target.value)}
+                  className="bg-white border border-[#88C13E] rounded px-3 py-1 text-[10px] font-black text-[#004071] uppercase tracking-wider w-64"
+                  autoFocus
+                  onBlur={handleSaveName}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSaveName()}
+                />
+                <button onClick={handleSaveName} className="text-green-600 hover:text-green-700">
+                  <i className="fa-solid fa-check text-xs"></i>
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 group/header">
+                <span className="text-[10px] font-black text-[#004071] uppercase tracking-[0.2em]">
+                  {analysis.customName || (isManual ? 'Nudo Manual' : `DOCUMENTO N° ${analysis.documentNumber || '-'}`)}
+                </span>
+                {!isManual && (
+                  <button 
+                    onClick={() => {
+                      setTempName(analysis.customName || `DOCUMENTO N° ${analysis.documentNumber || '-'}`);
+                      setIsEditingName(true);
+                    }} 
+                    className="text-slate-300 hover:text-[#88C13E] transition-colors opacity-0 group-hover/header:opacity-100"
+                    title="Renombrar documento"
+                  >
+                    <i className="fa-solid fa-pen text-[9px]"></i>
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {!isManual && analysis.status === 'done' && (
+                <span className="text-[9px] font-black text-[#88C13E] uppercase border border-[#88C13E]/30 px-2 py-0.5 rounded-md">Analizado</span>
+            )}
+             <button
+              onClick={(e) => { e.stopPropagation(); onRemove(analysis.id); }}
+              className="text-slate-300 hover:text-red-500 transition-colors"
+              title="Eliminar documento"
+            >
+              <i className="fa-solid fa-trash-can text-[11px]"></i>
+            </button>
+          </div>
+      </div>
       {analysis.image && (
         <div className="relative h-28 bg-[#0f172a] flex items-center justify-center overflow-hidden">
           <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'linear-gradient(45deg, #88C13E 25%, transparent 25%, transparent 50%, #88C13E 50%, #88C13E 75%, transparent 75%, transparent)', backgroundSize: '20px 20px' }}></div>
           <div className="flex flex-col items-center gap-2">
             <i className="fa-solid fa-file-invoice text-[#88C13E]/60 text-3xl"></i>
             <span className="text-[9px] font-black text-white/40 uppercase tracking-[0.4em]">Plano en Memoria de Análisis</span>
-          </div>
-          <div className="absolute top-4 right-6 flex items-center gap-3 z-10">
-            <button
-              onClick={(e) => { e.stopPropagation(); onRemove(analysis.id); }}
-              className="bg-red-500/90 hover:bg-red-600 text-white w-8 h-8 rounded-xl flex items-center justify-center transition-all shadow-xl active:scale-90"
-            >
-              <i className="fa-solid fa-trash-can text-[10px]"></i>
-            </button>
           </div>
         </div>
       )}

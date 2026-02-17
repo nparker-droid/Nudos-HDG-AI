@@ -70,7 +70,7 @@ const addPageNumbers = (doc: jsPDF) => {
         doc.setFontSize(7);
         doc.setTextColor(150, 150, 150);
         doc.setFont('helvetica', 'normal');
-        doc.text(`Página ${i} de ${pageCount} | Reporte Generado por HidroScan Engine`, 196, 288, { align: 'right' });
+        doc.text(`Página ${i} de ${pageCount}`, 196, 288, { align: 'right' });
     }
 };
 
@@ -107,7 +107,8 @@ const AuditReportModal: React.FC<AuditReportModalProps> = ({ project, repeatedNo
                     cursorY = 55; 
                 }
                 doc.setFont('helvetica', 'bold');
-                const nodeTitleLines = doc.splitTextToSize(`ESQUEMA UNIFICADO: "${node.nodeName}"`, maxTextWidth);
+                const docRef = node.docIndex ? ` (Doc N° ${node.docIndex})` : '';
+                const nodeTitleLines = doc.splitTextToSize(`ESQUEMA UNIFICADO: "${node.nodeName}"${docRef}`, maxTextWidth);
                 doc.text(nodeTitleLines, 20, cursorY);
                 cursorY += (nodeTitleLines.length * 6);
                 
@@ -199,6 +200,13 @@ const AuditReportModal: React.FC<AuditReportModalProps> = ({ project, repeatedNo
                             <div>
                                 <h4 className="font-bold text-slate-700">Unificación de Esquemas</h4>
                                 <p className="text-xs text-slate-500">Se reportarán <span className="font-bold">{repeatedNodes.length}</span> grupo(s) de esquemas idénticos para su consolidación.</p>
+                                <div className="mt-2 space-y-1">
+                                    {repeatedNodes.map((n, i) => (
+                                        <p key={i} className="text-[10px] text-slate-500 italic">
+                                            - {n.nodeName} {n.docIndex ? `(Identificado en Documento N° ${n.docIndex})` : ''}
+                                        </p>
+                                    ))}
+                                </div>
                             </div>
                         )}
                         

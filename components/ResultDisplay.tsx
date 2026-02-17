@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { AnalysisResult, HydraulicNode, Piece, NodeMaterial, Project } from '../types.ts';
-import AuditReportModal from './AuditReportModal.tsx';
 
 interface ResultDisplayProps {
   analysisId: string;
@@ -51,7 +50,14 @@ const PieceRow: React.FC<PieceRowProps> = ({ piece, onUpdate, onRemove }) => {
         <div className="flex items-center gap-2">
           {isIncomplete && <i className="fa-solid fa-circle-question text-amber-500 text-xs" title="Item a revisar"></i>}
           {isEditing ? (
-            <input type="text" value={piece.name} onChange={e => onUpdate({ name: e.target.value })} className="bg-white border rounded px-2 py-1 w-full font-bold text-slate-700" onBlur={() => setIsEditing(false)} autoFocus />
+            <input 
+              type="text" 
+              value={piece.name} 
+              onChange={e => onUpdate({ name: e.target.value.toUpperCase() })} 
+              className="bg-white border rounded px-2 py-1 w-full font-bold text-slate-700" 
+              onBlur={() => setIsEditing(false)} 
+              autoFocus 
+            />
           ) : (
             <span className={`font-bold text-slate-700 cursor-pointer ${!piece.name ? 'text-slate-300 italic underline decoration-dotted' : ''}`} onClick={() => setIsEditing(true)}>
               {piece.name || 'Definir pieza...'}
@@ -66,7 +72,13 @@ const PieceRow: React.FC<PieceRowProps> = ({ piece, onUpdate, onRemove }) => {
         </select>
       </td>
       <td className="px-6 py-4 text-center">
-        <input type="text" placeholder="DN?" value={piece.diameter} onChange={e => onUpdate({ diameter: e.target.value })} className={`bg-transparent border-none text-center font-mono font-black text-[#004071] w-20 outline-none ${!piece.diameter ? 'placeholder:text-amber-500' : ''}`} />
+        <input 
+          type="text" 
+          placeholder='Ej: 3", 75mm, 160mm' 
+          value={piece.diameter} 
+          onChange={e => onUpdate({ diameter: e.target.value })} 
+          className={`bg-transparent border-none text-center font-mono font-black text-[#004071] w-full outline-none placeholder:text-[9px] placeholder:font-normal placeholder:opacity-50 ${!piece.diameter ? 'placeholder:text-amber-500' : ''}`} 
+        />
       </td>
       <td className="px-6 py-4 text-center">
         <input type="text" placeholder="0,00" value={localWeight} onChange={e => handleWeightChange(e.target.value)} className="bg-transparent border-none text-center font-mono text-[11px] text-slate-500 w-16 outline-none" />
@@ -101,8 +113,23 @@ const NodeCard: React.FC<NodeCardProps> = ({ node, index, onUpdate, onRemove, on
   const incompleteCount = node.pieces.filter(p => !p.name || !p.material || !p.diameter || p.quantity <= 0).length;
   const hasError = incompleteCount > 0 || isDuplicate;
 
+  const normalizeIdString = (val: string) => {
+    return val.split(',')
+      .map(s => s.trim())
+      .filter(s => s.length > 0)
+      .map(s => {
+        // Normalización inteligente: si es un número puro o un prefijo+número (ej C-1)
+        return s.replace(/(\d+)/, (match) => match.padStart(2, '0'));
+      })
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+      .join(', ');
+  };
+
   const handleSaveHeader = () => {
-    onUpdate({ nodeName: editedName, id: editedId });
+    onUpdate({ 
+      nodeName: editedName.toUpperCase(), 
+      id: normalizeIdString(editedId) 
+    });
     setIsEditingHeader(false);
   };
 
@@ -227,38 +254,6 @@ const NodeCard: React.FC<NodeCardProps> = ({ node, index, onUpdate, onRemove, on
 };
 
 const ResultDisplay: React.FC<ResultDisplayProps> = ({ analysisId, result, searchTerm, duplicateIds, onUpdateNode, onRemoveNode, onRemoveAnalysis, onSaveToLibrary, onProcess, onCopyNode, isManual, project }) => {
-  const [showAuditReportModal, setShowAuditReportModal] = useState(false);
-  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({
-    audit: false,
-    schemes: false,
-    missing: false
-  });
-  const [nodesToReportMissing, setNodesToReportMissing] = useState(new Set<string>());
-
-  const toggleSection = (section: string) => {
-    setCollapsedSections(prev => ({ ...prev, [section]: !prev[section] }));
-  };
-
-  const handleToggleMissingNodeReport = (nodeKey: string) => {
-    setNodesToReportMissing(prev => {
-        const newSet = new Set(prev);
-        if (newSet.has(nodeKey)) {
-            newSet.delete(nodeKey);
-        } else {
-            newSet.add(nodeKey);
-        }
-        return newSet;
-    });
-  };
-
-  const handleToggleSelectAllMissingNodes = () => {
-    if (nodesToReportMissing.size === missingNodes.length) {
-      setNodesToReportMissing(new Set());
-    } else {
-      const allKeys = missingNodes.map(n => `${n.type}:${n.number}`);
-      setNodesToReportMissing(new Set(allKeys));
-    }
-  };
   
   // Explicitly type filteredNodes as HydraulicNode[] to avoid inference issues.
   const filteredNodes = useMemo<HydraulicNode[]>(() => {
@@ -275,244 +270,8 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({ analysisId, result, searc
     }, 0);
   }, [filteredNodes]);
 
-  const missingNodes = useMemo(() => {
-    const idsByType: Record<string, Set<number>> = {
-      Numerico: new Set(),
-      Corte: new Set(),
-      Ventosa: new Set(),
-      Desague: new Set(),
-      Reductora: new Set()
-    };
-
-    result.nodes.forEach(node => {
-      const type = node.type || 'Numerico';
-      const matches = node.id.match(/\d+/g);
-      if (matches) {
-        matches.forEach(idStr => {
-          const num = parseInt(idStr, 10);
-          if (!isNaN(num)) {
-            if (!idsByType[type]) idsByType[type] = new Set();
-            idsByType[type].add(num);
-          }
-        });
-      }
-    });
-
-    const missing: { type: string, number: number }[] = [];
-
-    Object.entries(idsByType).forEach(([type, set]) => {
-      if (set.size < 2) return;
-      const sorted = Array.from(set).sort((a, b) => a - b);
-      const min = sorted[0];
-      const max = sorted[sorted.length - 1];
-      for (let i = min; i <= max; i++) {
-        if (!set.has(i)) {
-          missing.push({ type, number: i });
-        }
-      }
-    });
-
-    return missing.sort((a, b) => {
-        if (a.type !== b.type) return a.type.localeCompare(b.type);
-        return a.number - b.number;
-    });
-  }, [result.nodes]);
-
-  // Agrupamiento de nudos faltantes para el UI
-  // Explicitly type missingNodesGrouped to ensure Object.entries works as expected.
-  const missingNodesGrouped = useMemo<Record<string, { type: string, number: number }[]>>(() => {
-    const groups: Record<string, { type: string, number: number }[]> = {};
-    missingNodes.forEach(n => {
-      if (!groups[n.type]) groups[n.type] = [];
-      groups[n.type].push(n);
-    });
-    return groups;
-  }, [missingNodes]);
-
-  // Explicitly type unifiedNodesSummary as HydraulicNode[]
-  const unifiedNodesSummary = useMemo<HydraulicNode[]>(() => {
-    if (isManual) return [];
-    return result.nodes
-      .filter(node => node.sourceGroupings && node.sourceGroupings.length > 1);
-  }, [result.nodes, isManual]);
-
-  const isAnythingToReport = unifiedNodesSummary.length > 0 || missingNodes.length > 0;
-
-  const getPrefixLabel = (type: string) => {
-    const prefixMap: Record<string, string> = {
-      'Corte': 'C',
-      'Ventosa': 'V',
-      'Desague': 'D',
-      'Reductora': 'R',
-      'Numerico': ''
-    };
-    return prefixMap[type] || '';
-  };
-
-  const getFullTypeLabel = (type: string) => {
-    const labelMap: Record<string, string> = {
-      'Corte': 'Cámaras de Corte',
-      'Ventosa': 'Cámaras de Ventosa',
-      'Desague': 'Cámaras de Desagüe',
-      'Reductora': 'Válvulas Reductoras',
-      'Numerico': 'Nudos Numéricos'
-    };
-    return labelMap[type] || type;
-  };
-
-  const formatIdsForDisplay = (idStr: string, type: string) => {
-    const matches = idStr.match(/\d+/g);
-    if (!matches) return idStr;
-    const prefix = getPrefixLabel(type);
-    return matches.map(m => {
-      const num = parseInt(m, 10);
-      return prefix ? `${prefix}-${num}` : m.padStart(2, '0');
-    }).join(', ');
-  };
-
-  const selectedMissingNodesObjects = useMemo(() => {
-    return missingNodes.filter(n => nodesToReportMissing.has(`${n.type}:${n.number}`));
-  }, [missingNodes, nodesToReportMissing]);
-
   return (
     <div className="space-y-8 w-full">
-      {isAnythingToReport && (
-        <div className="bg-blue-50 border border-blue-200 rounded-[1.5rem] overflow-hidden shadow-sm animate-in slide-in-from-top-4 duration-500">
-          <div 
-            onClick={() => toggleSection('audit')}
-            className="p-6 flex items-start gap-5 cursor-pointer hover:bg-blue-100/50 transition-colors"
-          >
-            <div className="w-12 h-12 bg-blue-500 text-white rounded-2xl flex items-center justify-center shrink-0 shadow-lg shadow-blue-500/20">
-              <i className="fa-solid fa-file-invoice text-xl"></i>
-            </div>
-            <div className="flex-grow">
-              <h5 className="text-[11px] font-black text-blue-900 uppercase tracking-widest mb-1 flex items-center justify-between">
-                Auditoría Técnica y Reportes
-                <i className={`fa-solid ${collapsedSections.audit ? 'fa-chevron-down' : 'fa-chevron-up'} text-[10px]`}></i>
-              </h5>
-              {!collapsedSections.audit && (
-                <>
-                  <p className="text-xs text-blue-700 mb-4">
-                    Se han identificado puntos de mejora. Genera una minuta técnica para comunicar estas observaciones al equipo de dibujo.
-                  </p>
-                  <ul className="list-disc list-inside text-xs text-blue-800 font-bold space-y-1">
-                    {unifiedNodesSummary.length > 0 && <li>{unifiedNodesSummary.length} esquema(s) repetido(s) para unificar.</li>}
-                    {missingNodes.length > 0 && <li>{missingNodes.length} nudo(s) faltante(s) detectados.</li>}
-                  </ul>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setShowAuditReportModal(true); }}
-                    className="mt-4 px-4 py-2 bg-blue-500 text-white rounded-xl text-[9px] font-black uppercase hover:shadow-lg transition-all self-start"
-                  >
-                    <i className="fa-solid fa-file-pdf mr-2"></i> Generar Minuta
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {unifiedNodesSummary.length > 0 && (
-        <div className="bg-green-50 border border-green-200 rounded-[1.5rem] overflow-hidden shadow-sm animate-in fade-in duration-500">
-          <div 
-            onClick={() => toggleSection('schemes')}
-            className="p-6 flex items-start gap-5 cursor-pointer hover:bg-green-100/50 transition-colors"
-          >
-            <div className="w-12 h-12 bg-green-500 text-white rounded-2xl flex items-center justify-center shrink-0 shadow-lg shadow-green-500/20">
-              <i className="fa-solid fa-object-group text-xl"></i>
-            </div>
-            <div className="flex-grow">
-              <h5 className="text-[11px] font-black text-green-900 uppercase tracking-widest mb-2 flex items-center justify-between">
-                Observación: Esquemas Repetidos Detectados
-                <i className={`fa-solid ${collapsedSections.schemes ? 'fa-chevron-down' : 'fa-chevron-up'} text-[10px]`}></i>
-              </h5>
-              {!collapsedSections.schemes && (
-                <div className="space-y-1.5 mt-2">
-                  {unifiedNodesSummary.map((node, index) => (
-                    <p key={index} className="text-[10px] text-green-700 font-bold uppercase opacity-90 leading-relaxed">
-                      Para <span className="text-green-900 font-black">"{node.nodeName}"</span>, se detectaron dibujos idénticos para <span className="text-green-900 font-black">{formatIdsForDisplay((node.sourceGroupings || [])[0], node.type)}</span> y {(node.sourceGroupings || []).slice(1).map((group, i) => (
-                          <span key={i}>
-                              <span className="text-green-900 font-black">{formatIdsForDisplay(group as string, node.type)}</span>{i < (node.sourceGroupings?.length || 0) - 2 ? ' y ' : ''}
-                          </span>
-                      ))}.
-                    </p>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {missingNodes.length > 0 && (
-        <div className="bg-sky-50 border border-sky-200 rounded-[1.5rem] overflow-hidden shadow-sm">
-          <div 
-            onClick={() => toggleSection('missing')}
-            className="p-6 flex items-start gap-5 cursor-pointer hover:bg-sky-100/50 transition-colors"
-          >
-            <div className="w-12 h-12 bg-sky-500 text-white rounded-2xl flex items-center justify-center shrink-0 shadow-lg shadow-sky-500/20">
-              <i className="fa-solid fa-search-plus text-xl"></i>
-            </div>
-            <div className="flex-grow">
-              <h5 className="text-[11px] font-black text-sky-900 uppercase tracking-widest mb-2 flex items-center justify-between">
-                Observación: Nudos Faltantes por Categoría
-                <i className={`fa-solid ${collapsedSections.missing ? 'fa-chevron-down' : 'fa-chevron-up'} text-[10px]`}></i>
-              </h5>
-              {!collapsedSections.missing && (
-                <>
-                  <p className="text-xs text-sky-700 mb-4 uppercase font-bold opacity-70">Evaluación de secuencias correlativas de forma aislada:</p>
-                  <div className="mb-6">
-                    <label 
-                      className="inline-flex items-center gap-2 px-3 py-1.5 bg-white border-2 border-sky-300 rounded-lg cursor-pointer hover:bg-sky-100 transition-colors font-black text-sky-900 text-xs"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={nodesToReportMissing.size === missingNodes.length}
-                        ref={el => { if(el) el.indeterminate = nodesToReportMissing.size > 0 && nodesToReportMissing.size < missingNodes.length; }}
-                        onChange={(e) => { e.stopPropagation(); handleToggleSelectAllMissingNodes(); }}
-                        className="h-4 w-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500"
-                      />
-                      MARCAR TODOS
-                    </label>
-                  </div>
-                  
-                  <div className="space-y-6">
-                    {(Object.entries(missingNodesGrouped) as [string, { type: string, number: number }[]][]).map(([type, nodes]) => (
-                      <div key={type} className="space-y-2">
-                        <h6 className="text-[9px] font-black text-sky-900 uppercase tracking-widest border-b border-sky-200 pb-1">{getFullTypeLabel(type)}:</h6>
-                        <div className="flex flex-wrap gap-2 pt-1">
-                          {nodes.map(n => {
-                            const nodeKey = `${n.type}:${n.number}`;
-                            const prefix = getPrefixLabel(n.type);
-                            const label = prefix ? `${prefix}-${n.number}` : String(n.number).padStart(2, '0');
-                            return (
-                              <label 
-                                key={nodeKey} 
-                                className="flex items-center gap-2 px-3 py-1.5 bg-white border border-sky-200 rounded-lg cursor-pointer hover:bg-sky-200 transition-colors"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={nodesToReportMissing.has(nodeKey)}
-                                  onChange={(e) => { e.stopPropagation(); handleToggleMissingNodeReport(nodeKey); }}
-                                  className="h-4 w-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500"
-                                />
-                                <span className="text-[10px] font-black text-sky-800 uppercase tracking-tighter">ID {label}</span>
-                              </label>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
       {totalIncomplete > 0 && (
         <div className="bg-amber-50 border border-amber-200 rounded-[1.5rem] p-6 flex items-start gap-5 animate-in slide-in-from-top-4 duration-500 shadow-sm">
           <div className="w-12 h-12 bg-amber-500 text-white rounded-2xl flex items-center justify-center shrink-0 shadow-lg shadow-amber-500/20">
@@ -574,14 +333,6 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({ analysisId, result, searc
           );
         })}
       </div>
-      {showAuditReportModal && project && (
-        <AuditReportModal 
-            project={project}
-            repeatedNodes={unifiedNodesSummary}
-            missingNodes={selectedMissingNodesObjects}
-            onClose={() => setShowAuditReportModal(false)}
-        />
-      )}
     </div>
   );
 };

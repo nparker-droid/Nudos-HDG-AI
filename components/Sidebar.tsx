@@ -1,4 +1,3 @@
-
 import React, { useRef } from 'react';
 import { Project } from '../types.ts';
 
@@ -70,8 +69,6 @@ const Sidebar: React.FC<SidebarProps> = ({
     }
   };
 
-  const creditPercentage = Math.min(100, Math.max(0, (credits / initialCredits) * 100));
-
   return (
     <aside className={`bg-white border-r border-slate-200 text-slate-600 flex flex-col shrink-0 shadow-2xl z-30 transition-all duration-300 relative ${isSidebarOpen ? 'w-[320px]' : 'w-0 overflow-hidden'}`}>
       
@@ -81,22 +78,6 @@ const Sidebar: React.FC<SidebarProps> = ({
           <h2 className="text-[11px] font-black tracking-tighter uppercase text-[#004071]">GESTOR DE NUDOS</h2>
           <p className="text-[7px] font-bold text-slate-400 tracking-widest uppercase mt-0.5">Nudos y Piezas Especiales</p>
         </div>
-      </div>
-
-      <div className="px-6 py-4 bg-slate-50/50 border-b border-slate-100 whitespace-nowrap overflow-hidden">
-        <div className="flex justify-between items-end mb-2">
-          <span className="text-[9px] font-black text-[#004071] uppercase tracking-widest">Créditos de Procesamiento</span>
-          <span className={`text-[11px] font-black ${credits < 5 ? 'text-red-500 animate-pulse' : 'text-[#88C13E]'}`}>{credits} / {initialCredits}</span>
-        </div>
-        <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
-          <div 
-            className={`h-full transition-all duration-1000 ${credits < 5 ? 'bg-red-500' : 'bg-[#88C13E]'}`} 
-            style={{ width: `${creditPercentage}%` }}
-          ></div>
-        </div>
-        <p className="text-[7px] font-bold text-slate-400 uppercase tracking-widest mt-2 flex items-center gap-1">
-          <i className="fa-solid fa-bolt text-[6px]"></i> {credits <= 0 ? 'Sin créditos. Contacta a soporte.' : 'Análisis automático activo'}
-        </p>
       </div>
 
       <div className="p-4 space-y-2 whitespace-nowrap">
@@ -136,10 +117,10 @@ const Sidebar: React.FC<SidebarProps> = ({
               className={`flex items-center justify-between p-4 rounded-2xl cursor-pointer transition-all ${activeProjectId === p.id ? 'bg-[#004071] text-white shadow-lg' : 'hover:bg-slate-50 text-slate-600'}`}
             >
               <div className="flex items-center gap-3 overflow-hidden">
-                <i className={`fa-solid fa-folder text-[12px] ${activeProjectId === p.id ? 'text-[#D9E021]' : 'opacity-40'}`}></i>
+                <i className={`fa-solid fa-folder text-[14px] ${activeProjectId === p.id ? 'text-[#D9E021]' : 'opacity-40'}`}></i>
                 <div className="flex flex-col overflow-hidden">
-                  <span className="text-[10px] font-black truncate uppercase tracking-tighter">{p.name}</span>
-                  <span className="text-[7px] font-bold opacity-60 uppercase">{p.code}</span>
+                  <span className="text-[12px] font-black truncate uppercase tracking-tighter">{p.name}</span>
+                  <span className="text-[8px] font-bold opacity-60 uppercase">{p.code}</span>
                 </div>
               </div>
               <div className="flex items-center gap-2 opacity-0 group-hover/project:opacity-100 transition-opacity">
@@ -155,11 +136,11 @@ const Sidebar: React.FC<SidebarProps> = ({
                   <div 
                     key={cat.id} 
                     onClick={() => onSelectCategory(cat.id)} 
-                    className={`group/cat flex items-center justify-between p-3 rounded-xl cursor-pointer text-[9px] font-bold uppercase tracking-tight transition-all ${activeCategoryId === cat.id ? 'bg-[#88C13E] text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
+                    className={`group/cat flex items-center justify-between p-3 rounded-xl cursor-pointer text-[11px] font-bold uppercase tracking-tight transition-all ${activeCategoryId === cat.id ? 'bg-[#88C13E] text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
                   >
                     <div className="flex items-center gap-2 truncate">
-                      <span className="text-[8px] opacity-40 font-black">{idx + 1}.</span>
-                      <i className={`fa-solid fa-tags text-[8px] ${activeCategoryId === cat.id ? 'text-white' : 'text-slate-300'}`}></i>
+                      <span className="text-[9px] opacity-40 font-black">{idx + 1}.</span>
+                      <i className={`fa-solid fa-tags text-[9px] ${activeCategoryId === cat.id ? 'text-white' : 'text-slate-300'}`}></i>
                       <span className="truncate">{cat.name}</span>
                     </div>
                     <div className="flex items-center gap-1 opacity-0 group-hover/cat:opacity-100 transition-opacity">
@@ -174,7 +155,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                 ))}
                 <button 
                   onClick={() => onAddCategory(p.id)} 
-                  className="w-full text-left p-2.5 text-[9px] text-[#004071] hover:bg-slate-100 rounded-xl flex items-center gap-2 font-black uppercase tracking-widest transition-all border border-dashed border-[#004071]/20 mt-2"
+                  className="w-full text-left p-2.5 text-[10px] text-[#004071] hover:bg-slate-100 rounded-xl flex items-center gap-2 font-black uppercase tracking-widest transition-all border border-dashed border-[#004071]/20 mt-2"
                 >
                   <i className="fa-solid fa-plus"></i> Nuevo Capítulo
                 </button>

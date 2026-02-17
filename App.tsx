@@ -7,8 +7,19 @@ import { Project, FileAnalysis, Category, HydraulicNode, Piece, NodeMaterial, Li
 import AnalysisCard from './components/AnalysisCard.tsx';
 import AddNodeModal from './components/AddNodeModal.tsx';
 import LibraryModal from './components/LibraryModal.tsx';
+import AuditReportModal from './components/AuditReportModal.tsx';
 
 const INITIAL_CREDITS = 50;
+
+// Utility to strictly sort and format ID strings (e.g. "05, 01" -> "01, 05")
+const sortIdString = (val: string): string => {
+  return val.split(',')
+    .map(s => s.trim())
+    .filter(s => s.length > 0)
+    .map(s => s.replace(/(\d+)/, (match) => match.padStart(2, '0')))
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+    .join(', ');
+};
 
 const generateId = () => {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -74,6 +85,17 @@ const App: React.FC = () => {
   const [copiedNode, setCopiedNode] = useState<HydraulicNode | null>(null);
   const [notification, setNotification] = useState('');
   const [isAutoSaving, setIsAutoSaving] = useState(false);
+  const [showAuditReportModal, setShowAuditReportModal] = useState(false);
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({
+    audit: false,
+    schemes: false,
+    missing: false
+  });
+  const [nodesToReportMissing, setNodesToReportMissing] = useState(new Set<string>());
+
+  const toggleSection = (section: string) => {
+    setCollapsedSections(prev => ({ ...prev, [section]: !prev[section] }));
+  };
 
   useEffect(() => {
     if (notification) {
@@ -130,29 +152,139 @@ const App: React.FC = () => {
   const activeProject = useMemo(() => projects.find(p => p.id === activeProjectId), [projects, activeProjectId]);
   const activeCategory = useMemo(() => activeProject?.categories.find(c => c.id === activeCategoryId), [activeProject, activeCategoryId]);
 
+  // --- Auditoría Global de Capítulo ---
+  const chapterNodes = useMemo(() => {
+    if (!activeCategory) return [];
+    return activeCategory.analyses.flatMap((a, idx) => 
+      (a.result?.nodes || []).map(node => ({ ...node, docIndex: idx + 1 }))
+    );
+  }, [activeCategory]);
+
   const chapterDuplicateIds = useMemo(() => {
-    if (!activeCategory) return new Set<string>();
     const idCount = new Map<string, number>();
     const duplicates = new Set<string>();
-    activeCategory.analyses.forEach(analysis => {
-      analysis.result?.nodes.forEach(node => {
-        const matches = node.id.match(/\d+/g);
-        if (matches) {
-          matches.forEach(id => {
-            const normalizedId = id.trim().toLowerCase();
-            if (normalizedId) {
-              // Se añade el tipo a la clave para evitar colisiones entre categorías distintas (C-16 vs V-16)
-              const uniqueKey = `${node.type}:${normalizedId}`;
-              idCount.set(uniqueKey, (idCount.get(uniqueKey) || 0) + 1);
-              if (idCount.get(uniqueKey)! > 1) duplicates.add(uniqueKey);
-            }
-          });
-        }
-      });
+    chapterNodes.forEach(node => {
+      const matches = node.id.match(/\d+/g);
+      if (matches) {
+        matches.forEach(id => {
+          const normalizedId = id.trim().toLowerCase();
+          if (normalizedId) {
+            const uniqueKey = `${node.type}:${normalizedId}`;
+            idCount.set(uniqueKey, (idCount.get(uniqueKey) || 0) + 1);
+            if (idCount.get(uniqueKey)! > 1) duplicates.add(uniqueKey);
+          }
+        });
+      }
     });
     return duplicates;
-  }, [activeCategory]);
-  
+  }, [chapterNodes]);
+
+  const missingNodesGlobal = useMemo(() => {
+    const idsByType: Record<string, Set<number>> = {
+      Numerico: new Set(),
+      Corte: new Set(),
+      Ventosa: new Set(),
+      Desague: new Set(),
+      Reductora: new Set()
+    };
+
+    chapterNodes.forEach(node => {
+      const type = node.type || 'Numerico';
+      const matches = node.id.match(/\d+/g);
+      if (matches) {
+        matches.forEach(idStr => {
+          const num = parseInt(idStr, 10);
+          if (!isNaN(num)) {
+            if (!idsByType[type]) idsByType[type] = new Set();
+            idsByType[type].add(num);
+          }
+        });
+      }
+    });
+
+    const missing: { type: string, number: number }[] = [];
+    Object.entries(idsByType).forEach(([type, set]) => {
+      if (set.size < 2) return;
+      const sorted = Array.from(set).sort((a, b) => a - b);
+      const min = sorted[0];
+      const max = sorted[sorted.length - 1];
+      for (let i = min; i <= max; i++) {
+        if (!set.has(i)) {
+          missing.push({ type, number: i });
+        }
+      }
+    });
+    return missing.sort((a, b) => {
+        if (a.type !== b.type) return a.type.localeCompare(b.type);
+        return a.number - b.number;
+    });
+  }, [chapterNodes]);
+
+  const missingNodesGrouped = useMemo(() => {
+    const groups: Record<string, { type: string, number: number }[]> = {};
+    missingNodesGlobal.forEach(n => {
+      if (!groups[n.type]) groups[n.type] = [];
+      groups[n.type].push(n);
+    });
+    return groups;
+  }, [missingNodesGlobal]);
+
+  const unifiedNodesSummaryGlobal = useMemo(() => {
+    return chapterNodes.filter(node => node.sourceGroupings && node.sourceGroupings.length > 1);
+  }, [chapterNodes]);
+
+  const isAnythingToReportGlobal = unifiedNodesSummaryGlobal.length > 0 || missingNodesGlobal.length > 0;
+
+  const handleToggleMissingNodeReport = (nodeKey: string) => {
+    setNodesToReportMissing(prev => {
+        const newSet = new Set(prev);
+        if (newSet.has(nodeKey)) newSet.delete(nodeKey);
+        else newSet.add(nodeKey);
+        return newSet;
+    });
+  };
+
+  const handleToggleSelectAllMissingNodes = () => {
+    if (nodesToReportMissing.size === missingNodesGlobal.length) {
+      setNodesToReportMissing(new Set());
+    } else {
+      const allKeys = missingNodesGlobal.map(n => `${n.type}:${n.number}`);
+      setNodesToReportMissing(new Set(allKeys));
+    }
+  };
+
+  const getPrefixLabel = (type: string) => {
+    const prefixMap: Record<string, string> = {
+      'Corte': 'C',
+      'Ventosa': 'V',
+      'Desague': 'D',
+      'Reductora': 'R',
+      'Numerico': ''
+    };
+    return prefixMap[type] || '';
+  };
+
+  const getFullTypeLabel = (type: string) => {
+    const labelMap: Record<string, string> = {
+      'Corte': 'Cámaras de Corte',
+      'Ventosa': 'Cámaras de Ventosa',
+      'Desague': 'Cámaras de Desagüe',
+      'Reductora': 'Válvulas Reductoras',
+      'Numerico': 'Nudos Numéricos'
+    };
+    return labelMap[type] || type;
+  };
+
+  const formatIdsForDisplayGlobal = (idStr: string, type: string) => {
+    const matches = idStr.match(/\d+/g);
+    if (!matches) return idStr;
+    const prefix = getPrefixLabel(type);
+    return matches.map(m => {
+      const num = parseInt(m, 10);
+      return prefix ? `${prefix}-${num}` : m.padStart(2, '0');
+    }).join(', ');
+  };
+
   const handleCopyNode = (node: HydraulicNode) => {
     const nodeToCopy = JSON.parse(JSON.stringify(node));
     setCopiedNode(nodeToCopy);
@@ -369,9 +501,13 @@ const App: React.FC = () => {
     const rawNodes = activeCategory.analyses.flatMap(a => a.result?.nodes || []);
     const expandedNodes: HydraulicNode[] = [];
     rawNodes.forEach(node => {
+      const prefix = getPrefixLabel(node.type);
       const numericIds = node.id.match(/\d+/g) || [];
       if (numericIds.length > 0) {
-        numericIds.forEach(individualId => expandedNodes.push({ ...node, id: individualId }));
+        numericIds.forEach(individualId => {
+            const formattedId = prefix ? `${prefix}-${parseInt(individualId, 10)}` : individualId.padStart(2, '0');
+            expandedNodes.push({ ...node, id: formattedId });
+        });
       } else {
         expandedNodes.push(node);
       }
@@ -419,10 +555,6 @@ const App: React.FC = () => {
     csvContent += ";\n";
 
     csvContent += ";;";
-    uniquePieceKeys.forEach(k => csvContent += `${pieceDetailsMap.get(k)?.union};`);
-    csvContent += ";\n";
-
-    csvContent += ";;";
     uniquePieceKeys.forEach(k => csvContent += `${pieceDetailsMap.get(k)?.diameter};`);
     csvContent += ";\n";
 
@@ -447,19 +579,19 @@ const App: React.FC = () => {
     });
 
     csvContent += "\n";
-    csvContent += "CANTIDAD TOTAL;;;";
+    csvContent += "CANTIDAD TOTAL;;";
     uniquePieceKeys.forEach(k => {
       csvContent += `${totalQuantitiesPerPiece.get(k)};`;
     });
     csvContent += `${grandTotalPieces};${totalAnchorages}\n`;
 
-    csvContent += "PESO UNITARIO (kg);;;";
+    csvContent += "PESO UNITARIO (kg);;";
     uniquePieceKeys.forEach(k => {
       csvContent += `${pieceDetailsMap.get(k)?.weight.toString().replace('.', ',')};`;
     });
     csvContent += ";\n";
 
-    csvContent += "PESO TOTAL (kg);;;";
+    csvContent += "PESO TOTAL (kg);;";
     let grandTotalWeight = 0;
     uniquePieceKeys.forEach(k => {
       const q = totalQuantitiesPerPiece.get(k)!;
@@ -586,6 +718,14 @@ const App: React.FC = () => {
       const result = await analyzeHydraulicPlan(img);
       setCredits(prev => Math.max(0, prev - 1));
 
+      // Force sort node IDs after AI analysis
+      if (result && result.nodes) {
+        result.nodes = result.nodes.map(n => ({
+          ...n,
+          id: sortIdString(n.id)
+        }));
+      }
+
       setProjects(prev => prev.map(p => p.id === activeProjectId ? {
         ...p,
         categories: p.categories.map(c => c.id === activeCategoryId ? {
@@ -619,7 +759,22 @@ const App: React.FC = () => {
     setDeleteConfirm({ show: true, type: 'analysis', projectId: activeProjectId, analysisId, name: 'Análisis de Imagen' });
   };
 
+  const handleUpdateAnalysisName = (analysisId: string, newName: string) => {
+    setProjects(prev => prev.map(p => p.id === activeProjectId ? {
+      ...p,
+      categories: p.categories.map(c => c.id === activeCategoryId ? {
+        ...c,
+        analyses: c.analyses.map(a => a.id === analysisId ? { ...a, customName: newName } : a)
+      } : c)
+    } : p));
+  };
+
   const handleUpdateNode = (analysisId: string, nodeId: string, updates: Partial<HydraulicNode>) => {
+    // If ID is being updated, force sort it
+    if (updates.id) {
+      updates.id = sortIdString(updates.id);
+    }
+
     setProjects(prev => prev.map(p => p.id === activeProjectId ? {
       ...p,
       categories: p.categories.map(c => c.id === activeCategoryId ? {
@@ -735,6 +890,10 @@ const App: React.FC = () => {
     setNotification('Nudo importado de la biblioteca.');
   };
 
+  const selectedMissingNodesObjectsGlobal = useMemo(() => {
+    return missingNodesGlobal.filter(n => nodesToReportMissing.has(`${n.type}:${n.number}`));
+  }, [missingNodesGlobal, nodesToReportMissing]);
+
   return (
     <div className="flex h-screen bg-[#f1f5f9] overflow-hidden font-['Inter']">
       <Sidebar
@@ -810,9 +969,161 @@ const App: React.FC = () => {
                   </div>
                 ) : (
                   <div className="space-y-6 pb-20">
-                    {activeCategory?.analyses.map(analysis => (
+                    {/* SECCIÓN DE AUDITORÍA GLOBAL DEL CAPÍTULO */}
+                    {isAnythingToReportGlobal && (
+                      <div className="space-y-6 mb-10">
+                        <div className="bg-blue-50 border border-blue-200 rounded-[1.5rem] overflow-hidden shadow-sm animate-in slide-in-from-top-4 duration-500">
+                          <div 
+                            onClick={() => toggleSection('audit')}
+                            className="p-6 flex items-start gap-5 cursor-pointer hover:bg-blue-100/50 transition-colors"
+                          >
+                            <div className="w-12 h-12 bg-blue-500 text-white rounded-2xl flex items-center justify-center shrink-0 shadow-lg shadow-blue-500/20">
+                              <i className="fa-solid fa-file-invoice text-xl"></i>
+                            </div>
+                            <div className="flex-grow">
+                              <h5 className="text-[11px] font-black text-blue-900 uppercase tracking-widest mb-1 flex items-center justify-between">
+                                Auditoría Técnica de Capítulo (Global)
+                                <i className={`fa-solid ${collapsedSections.audit ? 'fa-chevron-down' : 'fa-chevron-up'} text-[10px]`}></i>
+                              </h5>
+                              {!collapsedSections.audit && (
+                                <>
+                                  <p className="text-xs text-blue-700 mb-4">
+                                    Revisión consolidada de toda la planimetría de este capítulo. Genera una minuta técnica integral.
+                                  </p>
+                                  <ul className="list-disc list-inside text-xs text-blue-800 font-bold space-y-1">
+                                    {unifiedNodesSummaryGlobal.length > 0 && <li>{unifiedNodesSummaryGlobal.length} esquema(s) repetido(s) detectados globalmente.</li>}
+                                    {missingNodesGlobal.length > 0 && <li>{missingNodesGlobal.length} nudo(s) faltante(s) en la secuencia total.</li>}
+                                  </ul>
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); setShowAuditReportModal(true); }}
+                                    className="mt-4 px-4 py-2 bg-blue-500 text-white rounded-xl text-[9px] font-black uppercase hover:shadow-lg transition-all self-start"
+                                  >
+                                    <i className="fa-solid fa-file-pdf mr-2"></i> Generar Minuta Global
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        {unifiedNodesSummaryGlobal.length > 0 && !collapsedSections.audit && (
+                          <div className="bg-green-50 border border-green-200 rounded-[1.5rem] overflow-hidden shadow-sm animate-in fade-in duration-500">
+                            <div 
+                              onClick={() => toggleSection('schemes')}
+                              className="p-6 flex items-start gap-5 cursor-pointer hover:bg-green-100/50 transition-colors"
+                            >
+                              <div className="w-12 h-12 bg-green-500 text-white rounded-2xl flex items-center justify-center shrink-0 shadow-lg shadow-green-500/20">
+                                <i className="fa-solid fa-object-group text-xl"></i>
+                              </div>
+                              <div className="flex-grow">
+                                <h5 className="text-[11px] font-black text-green-900 uppercase tracking-widest mb-2 flex items-center justify-between">
+                                  Observación: Esquemas Repetidos en el Capítulo
+                                  <i className={`fa-solid ${collapsedSections.schemes ? 'fa-chevron-down' : 'fa-chevron-up'} text-[10px]`}></i>
+                                </h5>
+                                {!collapsedSections.schemes && (
+                                  <div className="space-y-1.5 mt-2">
+                                    {unifiedNodesSummaryGlobal.map((node, index) => (
+                                      <p key={index} className="text-[10px] text-green-700 font-bold uppercase opacity-90 leading-relaxed">
+                                        Para <span className="text-green-900 font-black">"{node.nodeName}"</span>, se detectaron dibujos idénticos para <span className="text-green-900 font-black">{formatIdsForDisplayGlobal((node.sourceGroupings || [])[0], node.type)}</span> y {(node.sourceGroupings || []).slice(1).map((group, i) => (
+                                            <span key={i}>
+                                                <span className="text-green-900 font-black">{formatIdsForDisplayGlobal(group as string, node.type)}</span>{i < (node.sourceGroupings?.length || 0) - 2 ? ' y ' : ''}
+                                            </span>
+                                        ))}.
+                                      </p>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {missingNodesGlobal.length > 0 && !collapsedSections.audit && (
+                          <div className="bg-sky-50 border border-sky-200 rounded-[1.5rem] overflow-hidden shadow-sm">
+                            <div 
+                              onClick={() => toggleSection('missing')}
+                              className="p-6 flex items-start gap-5 cursor-pointer hover:bg-sky-100/50 transition-colors"
+                            >
+                              <div className="w-12 h-12 bg-sky-500 text-white rounded-2xl flex items-center justify-center shrink-0 shadow-lg shadow-sky-500/20">
+                                <i className="fa-solid fa-search-plus text-xl"></i>
+                              </div>
+                              <div className="flex-grow">
+                                <h5 className="text-[11px] font-black text-sky-900 uppercase tracking-widest mb-2 flex items-center justify-between">
+                                  Observación: Nudos Faltantes Globales
+                                  <i className={`fa-solid ${collapsedSections.missing ? 'fa-chevron-down' : 'fa-chevron-up'} text-[10px]`}></i>
+                                </h5>
+                                {!collapsedSections.missing && (
+                                  <>
+                                    <p className="text-xs text-sky-700 mb-4 uppercase font-bold opacity-70">Evaluación de saltos en la secuencia de todo el capítulo:</p>
+                                    <div className="mb-6">
+                                      <label 
+                                        className="inline-flex items-center gap-2 px-3 py-1.5 bg-white border-2 border-sky-300 rounded-lg cursor-pointer hover:bg-sky-100 transition-colors font-black text-sky-900 text-xs"
+                                        onClick={(e) => e.stopPropagation()}
+                                      >
+                                        <input
+                                          type="checkbox"
+                                          checked={nodesToReportMissing.size === missingNodesGlobal.length}
+                                          ref={el => { if(el) el.indeterminate = nodesToReportMissing.size > 0 && nodesToReportMissing.size < missingNodesGlobal.length; }}
+                                          onChange={(e) => { e.stopPropagation(); handleToggleSelectAllMissingNodes(); }}
+                                          className="h-4 w-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500"
+                                        />
+                                        MARCAR TODOS
+                                      </label>
+                                    </div>
+                                    
+                                    <div className="space-y-6">
+                                      {(Object.entries(missingNodesGrouped) as [string, { type: string, number: number }[]][]).map(([type, nodes]) => (
+                                        <div key={type} className="space-y-2">
+                                          <h6 className="text-[9px] font-black text-sky-900 uppercase tracking-widest border-b border-sky-200 pb-1">{getFullTypeLabel(type)}:</h6>
+                                          <div className="flex flex-wrap gap-2 pt-1">
+                                            {nodes.map(n => {
+                                              const nodeKey = `${n.type}:${n.number}`;
+                                              const prefix = getPrefixLabel(n.type);
+                                              const label = prefix ? `${prefix}-${n.number}` : String(n.number).padStart(2, '0');
+                                              return (
+                                                <label 
+                                                  key={nodeKey} 
+                                                  className="flex items-center gap-2 px-3 py-1.5 bg-white border border-sky-200 rounded-lg cursor-pointer hover:bg-sky-200 transition-colors"
+                                                  onClick={(e) => e.stopPropagation()}
+                                                >
+                                                  <input
+                                                    type="checkbox"
+                                                    checked={nodesToReportMissing.has(nodeKey)}
+                                                    onChange={(e) => { e.stopPropagation(); handleToggleMissingNodeReport(nodeKey); }}
+                                                    className="h-4 w-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500"
+                                                  />
+                                                  <span className="text-[10px] font-black text-sky-800 uppercase tracking-tighter">ID {label}</span>
+                                                </label>
+                                              );
+                                            })}
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {activeCategory?.analyses.map((analysis, index) => (
                       <AnalysisCard
-                        key={analysis.id} analysis={analysis} onProcess={processAnalysis} onRemove={removeAnalysis} onUpdateNode={handleUpdateNode} onRemoveNode={handleRemoveNode} onSaveToLibrary={handleSaveToLibrary} searchTerm={searchTerm} duplicateIds={chapterDuplicateIds} credits={credits} onCopyNode={handleCopyNode} activeProject={activeProject}
+                        key={analysis.id} 
+                        analysis={{...analysis, documentNumber: index + 1}} // Assign index here
+                        onProcess={processAnalysis} 
+                        onRemove={removeAnalysis} 
+                        onUpdateAnalysisName={handleUpdateAnalysisName}
+                        onUpdateNode={handleUpdateNode} 
+                        onRemoveNode={handleRemoveNode} 
+                        onSaveToLibrary={handleSaveToLibrary} 
+                        searchTerm={searchTerm} 
+                        duplicateIds={chapterDuplicateIds} 
+                        credits={credits} 
+                        onCopyNode={handleCopyNode} 
+                        activeProject={activeProject}
                       />
                     ))}
                     <div className="pt-10 border-t border-slate-200 flex flex-col items-center">
@@ -1001,10 +1312,19 @@ const App: React.FC = () => {
               <input type="text" placeholder="Ej. Impulsión..." value={newCategoryName} onChange={e => setNewCategoryName(e.target.value)} className="w-full bg-slate-50 border p-5 rounded-2xl mb-8 font-black text-[#004071]" autoFocus />
               <div className="flex justify-center gap-6">
                 <button onClick={() => setShowCategoryModal(false)} className="text-xs font-black text-slate-400 uppercase">Cancelar</button>
-                <button onClick={handleSaveCategory} className="px-10 py-4 bg-[#004071] text-white rounded-2xl text-xs font-black uppercase">Crear</button>
+                <button onClick={handleSaveCategory} className="px-10 py-4 bg-[#004071] text-white rounded-2xl text-[10px] font-black uppercase">Crear</button>
               </div>
             </div>
           </div>
+        )}
+
+        {showAuditReportModal && activeProject && (
+          <AuditReportModal 
+              project={activeProject}
+              repeatedNodes={unifiedNodesSummaryGlobal}
+              missingNodes={selectedMissingNodesObjectsGlobal}
+              onClose={() => setShowAuditReportModal(false)}
+          />
         )}
       </main>
     </div>

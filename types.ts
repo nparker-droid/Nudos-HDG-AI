@@ -34,6 +34,7 @@ export interface HydraulicNode {
   pieces: Piece[];
   anchorageCount: number; 
   sourceGroupings?: string[];
+  docIndex?: number; // Índice del documento subido (1, 2, 3...)
 }
 
 /**
@@ -60,6 +61,7 @@ export interface FileAnalysis {
   status: 'pending' | 'analyzing' | 'done' | 'error';
   result?: AnalysisResult;
   error?: string;
+  customName?: string; // Nombre personalizado del plano/documento
 }
 
 /**
