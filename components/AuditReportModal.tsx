@@ -1,13 +1,17 @@
-
 import React from 'react';
 import { Project, HydraulicNode } from '../types.ts';
 import { LOGO_BASE64 } from '../logoData.ts';
 import { jsPDF } from 'jspdf';
 
+interface MissingNodeInfo {
+    type: string;
+    number: number;
+}
+
 interface AuditReportModalProps {
   project: Project;
   repeatedNodes: HydraulicNode[];
-  missingNodes: number[];
+  missingNodes: MissingNodeInfo[];
   onClose: () => void;
 }
 
@@ -19,6 +23,17 @@ const formatDate = (dateStr: string) => {
   const parts = dateStr.split('-');
   if (parts.length !== 3) return dateStr;
   return `${parts[2]}-${parts[1]}-${parts[0]}`;
+};
+
+const getPrefixLabel = (type: string) => {
+    const prefixMap: Record<string, string> = {
+      'Corte': 'C',
+      'Ventosa': 'V',
+      'Desague': 'D',
+      'Reductora': 'R',
+      'Numerico': ''
+    };
+    return prefixMap[type] || '';
 };
 
 const drawCorporateHeader = (doc: jsPDF, project: Project, title: string) => {
@@ -65,6 +80,7 @@ const AuditReportModal: React.FC<AuditReportModalProps> = ({ project, repeatedNo
         const doc = new jsPDF();
         let cursorY = 55;
         let sectionCounter = 1;
+        const maxTextWidth = 175;
 
         drawCorporateHeader(doc, project, 'Minuta Técnica de Nudos'); 
 
@@ -79,35 +95,40 @@ const AuditReportModal: React.FC<AuditReportModalProps> = ({ project, repeatedNo
             doc.setTextColor(0,0,0);
             doc.setFontSize(9);
             doc.setFont('helvetica', 'normal');
-            doc.text('Se ha detectado que múltiples esquemas de nudos son idénticos. Para optimizar el plano, se sugiere unificarlos.', 20, cursorY);
-            cursorY += 10;
+            const introText = 'Se ha detectado que múltiples esquemas de nudos son idénticos. Para optimizar el plano, se sugiere unificarlos.';
+            const introLines = doc.splitTextToSize(introText, maxTextWidth);
+            doc.text(introLines, 20, cursorY);
+            cursorY += (introLines.length * 5) + 5;
             
             repeatedNodes.forEach(node => {
-                if (cursorY > 260) { 
+                if (cursorY > 250) { 
                     doc.addPage(); 
                     drawCorporateHeader(doc, project, 'Minuta Técnica de Nudos'); 
                     cursorY = 55; 
                 }
                 doc.setFont('helvetica', 'bold');
-                doc.text(`ESQUEMA UNIFICADO: "${node.nodeName}"`, 20, cursorY);
-                cursorY += 6;
+                const nodeTitleLines = doc.splitTextToSize(`ESQUEMA UNIFICADO: "${node.nodeName}"`, maxTextWidth);
+                doc.text(nodeTitleLines, 20, cursorY);
+                cursorY += (nodeTitleLines.length * 6);
                 
                 doc.setFont('helvetica', 'normal');
                 doc.setTextColor(100, 100, 100);
                 const groupsText = (node.sourceGroupings || []).map(group => `[${group}]`).join(' y ');
-                doc.text(`Este esquema se repitió en los grupos de nudos: ${groupsText}.`, 25, cursorY);
-                cursorY += 6;
+                const detailLines = doc.splitTextToSize(`Este esquema se repitió en los grupos de nudos: ${groupsText}.`, maxTextWidth - 5);
+                doc.text(detailLines, 25, cursorY);
+                cursorY += (detailLines.length * 5) + 1;
                 
                 doc.setTextColor(0, 0, 0);
-                doc.text(`Sugerencia: Unificar en un solo esquema para los nudos: ${node.id}.`, 25, cursorY);
-                cursorY += 12;
+                const suggestionLines = doc.splitTextToSize(`Sugerencia: Unificar en un solo esquema para los nudos: ${node.id}.`, maxTextWidth - 5);
+                doc.text(suggestionLines, 25, cursorY);
+                cursorY += (suggestionLines.length * 5) + 10;
             });
             cursorY += 5;
         }
 
         // Sección 2: Nudos Faltantes
         if (missingNodes.length > 0) {
-            if (cursorY > 250) { 
+            if (cursorY > 240) { 
                 doc.addPage(); 
                 drawCorporateHeader(doc, project, 'Minuta Técnica de Nudos'); 
                 cursorY = 55; 
@@ -121,13 +142,37 @@ const AuditReportModal: React.FC<AuditReportModalProps> = ({ project, repeatedNo
             doc.setTextColor(0, 0, 0);
             doc.setFont('helvetica', 'normal');
             doc.setFontSize(9);
-            doc.text('Se solicita al equipo de dibujo incorporar los siguientes nudos en la planimetría, ya que no fueron detectados:', 20, cursorY);
-            cursorY += 10;
+            const missingIntro = 'Se solicita incorporar los siguientes nudos por haber identificado saltos en la secuencia correlativa:';
+            const missingIntroLines = doc.splitTextToSize(missingIntro, maxTextWidth);
+            doc.text(missingIntroLines, 20, cursorY);
+            cursorY += (missingIntroLines.length * 5) + 5;
             
-            doc.setFont('helvetica', 'bold');
-            const nodesText = missingNodes.map(n => `NUDO ${String(n).padStart(2, '0')}`).join(', ');
-            const lines = doc.splitTextToSize(`- ${nodesText}`, 170);
-            doc.text(lines, 25, cursorY);
+            // Agrupamos por tipo para el reporte
+            const byType: Record<string, number[]> = {};
+            missingNodes.forEach(n => {
+                if(!byType[n.type]) byType[n.type] = [];
+                byType[n.type].push(n.number);
+            });
+
+            Object.entries(byType).forEach(([type, nums]) => {
+                const prefix = getPrefixLabel(type);
+                const label = type === 'Numerico' ? 'NUDOS' : `CÁMARAS (${type.toUpperCase()})`;
+                const formattedNums = nums.map(n => prefix ? `${prefix}-${n}` : String(n).padStart(2, '0')).join(', ');
+                
+                doc.setFont('helvetica', 'bold');
+                doc.text(`${label}:`, 25, cursorY);
+                cursorY += 6;
+                doc.setFont('helvetica', 'normal');
+                const lines = doc.splitTextToSize(formattedNums, maxTextWidth - 10);
+                doc.text(lines, 30, cursorY);
+                cursorY += (lines.length * 5) + 5;
+
+                if (cursorY > 270) {
+                    doc.addPage();
+                    drawCorporateHeader(doc, project, 'Minuta Técnica de Nudos');
+                    cursorY = 55;
+                }
+            });
         }
         
         addPageNumbers(doc);
@@ -159,11 +204,19 @@ const AuditReportModal: React.FC<AuditReportModalProps> = ({ project, repeatedNo
                         
                         {missingNodes.length > 0 && (
                             <div>
-                                <h4 className="font-bold text-slate-700">Nudos Faltantes</h4>
-                                <p className="text-xs text-slate-500">Se solicitará la incorporación de los siguientes <span className="font-bold">{missingNodes.length}</span> nudo(s):</p>
-                                <p className="text-sm text-sky-800 font-mono p-4 bg-sky-50 rounded-lg mt-2 text-xs">
-                                    {missingNodes.map(n => `N°${String(n).padStart(2, '0')}`).join(', ')}
-                                </p>
+                                <h4 className="font-bold text-slate-700">Nudos Faltantes Detallados</h4>
+                                <p className="text-xs text-slate-500">Se solicitará la incorporación de los siguientes <span className="font-bold">{missingNodes.length}</span> nudo(s) faltantes:</p>
+                                <div className="mt-2 space-y-2">
+                                    {missingNodes.map((n, i) => {
+                                        const prefix = getPrefixLabel(n.type);
+                                        const label = prefix ? `${prefix}-${n.number}` : String(n.number).padStart(2, '0');
+                                        return (
+                                            <span key={i} className="inline-block px-2 py-1 bg-sky-50 text-sky-800 text-[10px] font-bold rounded mr-1 mb-1 border border-sky-100 uppercase">
+                                                {label} ({n.type})
+                                            </span>
+                                        );
+                                    })}
+                                </div>
                             </div>
                         )}
 

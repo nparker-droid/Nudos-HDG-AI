@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { AnalysisResult, HydraulicNode, Piece, NodeMaterial, Project } from '../types.ts';
 import AuditReportModal from './AuditReportModal.tsx';
@@ -229,15 +228,24 @@ const NodeCard: React.FC<NodeCardProps> = ({ node, index, onUpdate, onRemove, on
 
 const ResultDisplay: React.FC<ResultDisplayProps> = ({ analysisId, result, searchTerm, duplicateIds, onUpdateNode, onRemoveNode, onRemoveAnalysis, onSaveToLibrary, onProcess, onCopyNode, isManual, project }) => {
   const [showAuditReportModal, setShowAuditReportModal] = useState(false);
-  const [nodesToReportMissing, setNodesToReportMissing] = useState(new Set<number>());
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({
+    audit: false,
+    schemes: false,
+    missing: false
+  });
+  const [nodesToReportMissing, setNodesToReportMissing] = useState(new Set<string>());
 
-  const handleToggleMissingNodeReport = (nodeId: number) => {
+  const toggleSection = (section: string) => {
+    setCollapsedSections(prev => ({ ...prev, [section]: !prev[section] }));
+  };
+
+  const handleToggleMissingNodeReport = (nodeKey: string) => {
     setNodesToReportMissing(prev => {
         const newSet = new Set(prev);
-        if (newSet.has(nodeId)) {
-            newSet.delete(nodeId);
+        if (newSet.has(nodeKey)) {
+            newSet.delete(nodeKey);
         } else {
-            newSet.add(nodeId);
+            newSet.add(nodeKey);
         }
         return newSet;
     });
@@ -247,11 +255,13 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({ analysisId, result, searc
     if (nodesToReportMissing.size === missingNodes.length) {
       setNodesToReportMissing(new Set());
     } else {
-      setNodesToReportMissing(new Set(missingNodes));
+      const allKeys = missingNodes.map(n => `${n.type}:${n.number}`);
+      setNodesToReportMissing(new Set(allKeys));
     }
   };
   
-  const filteredNodes = useMemo(() => {
+  // Explicitly type filteredNodes as HydraulicNode[] to avoid inference issues.
+  const filteredNodes = useMemo<HydraulicNode[]>(() => {
     let nodes = [...result.nodes];
     nodes.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' }));
     if (!searchTerm) return nodes;
@@ -288,7 +298,7 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({ analysisId, result, searc
       }
     });
 
-    const missing: number[] = [];
+    const missing: { type: string, number: number }[] = [];
 
     Object.entries(idsByType).forEach(([type, set]) => {
       if (set.size < 2) return;
@@ -297,27 +307,38 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({ analysisId, result, searc
       const max = sorted[sorted.length - 1];
       for (let i = min; i <= max; i++) {
         if (!set.has(i)) {
-          missing.push(i);
+          missing.push({ type, number: i });
         }
       }
     });
 
-    return missing.sort((a, b) => a - b);
+    return missing.sort((a, b) => {
+        if (a.type !== b.type) return a.type.localeCompare(b.type);
+        return a.number - b.number;
+    });
   }, [result.nodes]);
 
-  const unifiedNodesSummary = useMemo(() => {
+  // Agrupamiento de nudos faltantes para el UI
+  // Explicitly type missingNodesGrouped to ensure Object.entries works as expected.
+  const missingNodesGrouped = useMemo<Record<string, { type: string, number: number }[]>>(() => {
+    const groups: Record<string, { type: string, number: number }[]> = {};
+    missingNodes.forEach(n => {
+      if (!groups[n.type]) groups[n.type] = [];
+      groups[n.type].push(n);
+    });
+    return groups;
+  }, [missingNodes]);
+
+  // Explicitly type unifiedNodesSummary as HydraulicNode[]
+  const unifiedNodesSummary = useMemo<HydraulicNode[]>(() => {
     if (isManual) return [];
-    // SOLO se consideran unificados si la IA detectó dibujos SEPARADOS y los unió (length > 1)
     return result.nodes
       .filter(node => node.sourceGroupings && node.sourceGroupings.length > 1);
   }, [result.nodes, isManual]);
 
   const isAnythingToReport = unifiedNodesSummary.length > 0 || missingNodes.length > 0;
 
-  const formatIdsForDisplay = (idStr: string, type: string) => {
-    const matches = idStr.match(/\d+/g);
-    if (!matches) return idStr;
-    
+  const getPrefixLabel = (type: string) => {
     const prefixMap: Record<string, string> = {
       'Corte': 'C',
       'Ventosa': 'V',
@@ -325,103 +346,168 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({ analysisId, result, searc
       'Reductora': 'R',
       'Numerico': ''
     };
-    
-    const prefix = prefixMap[type] || '';
-    
+    return prefixMap[type] || '';
+  };
+
+  const getFullTypeLabel = (type: string) => {
+    const labelMap: Record<string, string> = {
+      'Corte': 'Cámaras de Corte',
+      'Ventosa': 'Cámaras de Ventosa',
+      'Desague': 'Cámaras de Desagüe',
+      'Reductora': 'Válvulas Reductoras',
+      'Numerico': 'Nudos Numéricos'
+    };
+    return labelMap[type] || type;
+  };
+
+  const formatIdsForDisplay = (idStr: string, type: string) => {
+    const matches = idStr.match(/\d+/g);
+    if (!matches) return idStr;
+    const prefix = getPrefixLabel(type);
     return matches.map(m => {
       const num = parseInt(m, 10);
       return prefix ? `${prefix}-${num}` : m.padStart(2, '0');
     }).join(', ');
   };
 
+  const selectedMissingNodesObjects = useMemo(() => {
+    return missingNodes.filter(n => nodesToReportMissing.has(`${n.type}:${n.number}`));
+  }, [missingNodes, nodesToReportMissing]);
+
   return (
     <div className="space-y-8 w-full">
       {isAnythingToReport && (
-        <div className="bg-blue-50 border border-blue-200 rounded-[1.5rem] p-6 animate-in slide-in-from-top-4 duration-500 shadow-sm">
-          <div className="flex items-start gap-5">
+        <div className="bg-blue-50 border border-blue-200 rounded-[1.5rem] overflow-hidden shadow-sm animate-in slide-in-from-top-4 duration-500">
+          <div 
+            onClick={() => toggleSection('audit')}
+            className="p-6 flex items-start gap-5 cursor-pointer hover:bg-blue-100/50 transition-colors"
+          >
             <div className="w-12 h-12 bg-blue-500 text-white rounded-2xl flex items-center justify-center shrink-0 shadow-lg shadow-blue-500/20">
               <i className="fa-solid fa-file-invoice text-xl"></i>
             </div>
             <div className="flex-grow">
-              <h5 className="text-[11px] font-black text-blue-900 uppercase tracking-widest mb-2">Auditoría Técnica y Reportes</h5>
-              <p className="text-xs text-blue-700 mb-4">
-                Se han identificado puntos de mejora en los planos. Genera una minuta técnica para comunicar estas observaciones al equipo de dibujo.
-              </p>
-              <ul className="list-disc list-inside text-xs text-blue-800 font-bold space-y-1">
-                {unifiedNodesSummary.length > 0 && <li>{unifiedNodesSummary.length} esquema(s) repetido(s) para unificar.</li>}
-                {missingNodes.length > 0 && <li>{missingNodes.length} nudo(s) faltante(s) detectados por secuencia de tipo.</li>}
-              </ul>
+              <h5 className="text-[11px] font-black text-blue-900 uppercase tracking-widest mb-1 flex items-center justify-between">
+                Auditoría Técnica y Reportes
+                <i className={`fa-solid ${collapsedSections.audit ? 'fa-chevron-down' : 'fa-chevron-up'} text-[10px]`}></i>
+              </h5>
+              {!collapsedSections.audit && (
+                <>
+                  <p className="text-xs text-blue-700 mb-4">
+                    Se han identificado puntos de mejora. Genera una minuta técnica para comunicar estas observaciones al equipo de dibujo.
+                  </p>
+                  <ul className="list-disc list-inside text-xs text-blue-800 font-bold space-y-1">
+                    {unifiedNodesSummary.length > 0 && <li>{unifiedNodesSummary.length} esquema(s) repetido(s) para unificar.</li>}
+                    {missingNodes.length > 0 && <li>{missingNodes.length} nudo(s) faltante(s) detectados.</li>}
+                  </ul>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShowAuditReportModal(true); }}
+                    className="mt-4 px-4 py-2 bg-blue-500 text-white rounded-xl text-[9px] font-black uppercase hover:shadow-lg transition-all self-start"
+                  >
+                    <i className="fa-solid fa-file-pdf mr-2"></i> Generar Minuta
+                  </button>
+                </>
+              )}
             </div>
-            <button
-              onClick={() => setShowAuditReportModal(true)}
-              className="px-4 py-2 bg-blue-500 text-white rounded-xl text-[9px] font-black uppercase hover:shadow-lg transition-all self-start"
-            >
-              <i className="fa-solid fa-file-pdf mr-2"></i> Generar Minuta
-            </button>
           </div>
         </div>
       )}
 
       {unifiedNodesSummary.length > 0 && (
-        <div className="bg-green-50 border border-green-200 rounded-[1.5rem] p-6 animate-in slide-in-from-top-4 duration-500 shadow-sm">
-          <div className="flex items-start gap-5">
+        <div className="bg-green-50 border border-green-200 rounded-[1.5rem] overflow-hidden shadow-sm animate-in fade-in duration-500">
+          <div 
+            onClick={() => toggleSection('schemes')}
+            className="p-6 flex items-start gap-5 cursor-pointer hover:bg-green-100/50 transition-colors"
+          >
             <div className="w-12 h-12 bg-green-500 text-white rounded-2xl flex items-center justify-center shrink-0 shadow-lg shadow-green-500/20">
               <i className="fa-solid fa-object-group text-xl"></i>
             </div>
             <div className="flex-grow">
-              <h5 className="text-[11px] font-black text-green-900 uppercase tracking-widest mb-2">Observación: Esquemas Repetidos Detectados</h5>
-              <div className="space-y-1.5">
-                {unifiedNodesSummary.map((node, index) => (
-                   <p key={index} className="text-[10px] text-green-700 font-bold uppercase leading-relaxed opacity-90">
-                     Para <span className="text-green-900 font-black">"{node.nodeName}"</span>, se detectaron bloques de dibujo idénticos que contienen a los nudos <span className="text-green-900 font-black">{formatIdsForDisplay(node.sourceGroupings![0], node.type)}</span> y {node.sourceGroupings!.slice(1).map((group, i) => (
-                        <span key={i}>
-                            otro bloque que contenía <span className="text-green-900 font-black">{formatIdsForDisplay(group, node.type)}</span>{i < node.sourceGroupings!.length - 2 ? ' y ' : ''}
-                        </span>
-                    ))}. Se recomienda unificarlos en un solo detalle para optimizar el plano.
-                   </p>
-                ))}
-              </div>
+              <h5 className="text-[11px] font-black text-green-900 uppercase tracking-widest mb-2 flex items-center justify-between">
+                Observación: Esquemas Repetidos Detectados
+                <i className={`fa-solid ${collapsedSections.schemes ? 'fa-chevron-down' : 'fa-chevron-up'} text-[10px]`}></i>
+              </h5>
+              {!collapsedSections.schemes && (
+                <div className="space-y-1.5 mt-2">
+                  {unifiedNodesSummary.map((node, index) => (
+                    <p key={index} className="text-[10px] text-green-700 font-bold uppercase opacity-90 leading-relaxed">
+                      Para <span className="text-green-900 font-black">"{node.nodeName}"</span>, se detectaron dibujos idénticos para <span className="text-green-900 font-black">{formatIdsForDisplay((node.sourceGroupings || [])[0], node.type)}</span> y {(node.sourceGroupings || []).slice(1).map((group, i) => (
+                          <span key={i}>
+                              <span className="text-green-900 font-black">{formatIdsForDisplay(group as string, node.type)}</span>{i < (node.sourceGroupings?.length || 0) - 2 ? ' y ' : ''}
+                          </span>
+                      ))}.
+                    </p>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
       )}
 
       {missingNodes.length > 0 && (
-        <div className="bg-sky-50 border border-sky-200 rounded-[1.5rem] p-6 animate-in slide-in-from-top-4 duration-500 shadow-sm">
-          <div className="flex items-start gap-5">
+        <div className="bg-sky-50 border border-sky-200 rounded-[1.5rem] overflow-hidden shadow-sm">
+          <div 
+            onClick={() => toggleSection('missing')}
+            className="p-6 flex items-start gap-5 cursor-pointer hover:bg-sky-100/50 transition-colors"
+          >
             <div className="w-12 h-12 bg-sky-500 text-white rounded-2xl flex items-center justify-center shrink-0 shadow-lg shadow-sky-500/20">
               <i className="fa-solid fa-search-plus text-xl"></i>
             </div>
             <div className="flex-grow">
-              <h5 className="text-[11px] font-black text-sky-900 uppercase tracking-widest mb-2">Observación: Nudos Faltantes en Secuencia (Independiente)</h5>
-              <p className="text-xs text-sky-700 mb-4">
-                Se han evaluado las secuencias por tipo de nudo (Cámaras, Ventosas, etc) de forma aislada. Selecciona cuáles reportar:
-              </p>
-              <div className="mb-4">
-                <label className="inline-flex items-center gap-2 px-3 py-1.5 bg-white border-2 border-sky-300 rounded-lg cursor-pointer hover:bg-sky-100 transition-colors font-black text-sky-900 text-xs">
-                  <input
-                    type="checkbox"
-                    checked={nodesToReportMissing.size === missingNodes.length}
-                    ref={el => { if(el) el.indeterminate = nodesToReportMissing.size > 0 && nodesToReportMissing.size < missingNodes.length; }}
-                    onChange={handleToggleSelectAllMissingNodes}
-                    className="h-4 w-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500"
-                  />
-                  MARCAR TODOS
-                </label>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {missingNodes.map(nodeId => (
-                  <label key={nodeId} className="flex items-center gap-2 px-3 py-1.5 bg-white border border-sky-200 rounded-lg cursor-pointer hover:bg-sky-100 transition-colors">
-                    <input
-                      type="checkbox"
-                      checked={nodesToReportMissing.has(nodeId)}
-                      onChange={() => handleToggleMissingNodeReport(nodeId)}
-                      className="h-4 w-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500"
-                    />
-                    <span className="text-xs font-bold text-sky-800">ID {String(nodeId).padStart(2, '0')}</span>
-                  </label>
-                ))}
-              </div>
+              <h5 className="text-[11px] font-black text-sky-900 uppercase tracking-widest mb-2 flex items-center justify-between">
+                Observación: Nudos Faltantes por Categoría
+                <i className={`fa-solid ${collapsedSections.missing ? 'fa-chevron-down' : 'fa-chevron-up'} text-[10px]`}></i>
+              </h5>
+              {!collapsedSections.missing && (
+                <>
+                  <p className="text-xs text-sky-700 mb-4 uppercase font-bold opacity-70">Evaluación de secuencias correlativas de forma aislada:</p>
+                  <div className="mb-6">
+                    <label 
+                      className="inline-flex items-center gap-2 px-3 py-1.5 bg-white border-2 border-sky-300 rounded-lg cursor-pointer hover:bg-sky-100 transition-colors font-black text-sky-900 text-xs"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={nodesToReportMissing.size === missingNodes.length}
+                        ref={el => { if(el) el.indeterminate = nodesToReportMissing.size > 0 && nodesToReportMissing.size < missingNodes.length; }}
+                        onChange={(e) => { e.stopPropagation(); handleToggleSelectAllMissingNodes(); }}
+                        className="h-4 w-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500"
+                      />
+                      MARCAR TODOS
+                    </label>
+                  </div>
+                  
+                  <div className="space-y-6">
+                    {(Object.entries(missingNodesGrouped) as [string, { type: string, number: number }[]][]).map(([type, nodes]) => (
+                      <div key={type} className="space-y-2">
+                        <h6 className="text-[9px] font-black text-sky-900 uppercase tracking-widest border-b border-sky-200 pb-1">{getFullTypeLabel(type)}:</h6>
+                        <div className="flex flex-wrap gap-2 pt-1">
+                          {nodes.map(n => {
+                            const nodeKey = `${n.type}:${n.number}`;
+                            const prefix = getPrefixLabel(n.type);
+                            const label = prefix ? `${prefix}-${n.number}` : String(n.number).padStart(2, '0');
+                            return (
+                              <label 
+                                key={nodeKey} 
+                                className="flex items-center gap-2 px-3 py-1.5 bg-white border border-sky-200 rounded-lg cursor-pointer hover:bg-sky-200 transition-colors"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={nodesToReportMissing.has(nodeKey)}
+                                  onChange={(e) => { e.stopPropagation(); handleToggleMissingNodeReport(nodeKey); }}
+                                  className="h-4 w-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500"
+                                />
+                                <span className="text-[10px] font-black text-sky-800 uppercase tracking-tighter">ID {label}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -435,8 +521,8 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({ analysisId, result, searc
           <div>
             <h5 className="text-[11px] font-black text-amber-900 uppercase tracking-widest mb-1">Items a revisar por el usuario: {totalIncomplete}</h5>
             <p className="text-[10px] text-amber-700 font-bold uppercase leading-relaxed opacity-80">
-              Se han detectado componentes pero no fue posible completar todos sus datos (Nombre, Material o Diámetro). <br/>
-              <span className="text-amber-900">Por favor, revisa las filas resaltadas en color ámbar.</span>
+              Se han detectado componentes con datos incompletos. <br/>
+              <span className="text-amber-900">Por favor, revisa las filas resaltadas en color ámbar en el detalle de cada nudo.</span>
             </p>
           </div>
         </div>
@@ -471,9 +557,7 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({ analysisId, result, searc
 
       <div className="w-full">
         {filteredNodes.map((node, idx) => {
-          // Explicitly typing nodeNumericIds to avoid 'never' type inference
           const nodeNumericIds: string[] = node.id.match(/\d+/g) || [];
-          // Se utiliza la clave compuesta tipo:id para el chequeo de duplicados
           const isDuplicate = nodeNumericIds.some(id => duplicateIds.has(`${node.type}:${id.toLowerCase()}`));
           
           return (
@@ -494,7 +578,7 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({ analysisId, result, searc
         <AuditReportModal 
             project={project}
             repeatedNodes={unifiedNodesSummary}
-            missingNodes={Array.from(nodesToReportMissing).sort((a: number, b: number) => a - b)}
+            missingNodes={selectedMissingNodesObjects}
             onClose={() => setShowAuditReportModal(false)}
         />
       )}
