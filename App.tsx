@@ -4,7 +4,8 @@ import FileUploader from './components/FileUploader.tsx';
 import ResultDisplay from './components/ResultDisplay.tsx';
 import Sidebar from './components/Sidebar.tsx';
 import { analyzeHydraulicPlan } from './services/geminiService.ts';
-import { Project, FileAnalysis, Category, HydraulicNode, Piece, NodeMaterial, LibraryNode } from './types.ts';
+// Fixed: Added AnalysisResult to the imports from types.ts
+import { Project, FileAnalysis, Category, HydraulicNode, Piece, NodeMaterial, LibraryNode, AnalysisResult } from './types.ts';
 import AnalysisCard from './components/AnalysisCard.tsx';
 import AddNodeModal from './components/AddNodeModal.tsx';
 import LibraryModal from './components/LibraryModal.tsx';
@@ -118,11 +119,11 @@ const App: React.FC = () => {
   }>({ show: false, type: 'project', projectId: '', name: '' });
 
   const [projectForm, setProjectForm] = useState<Partial<Project>>({
-    code: 'HDG-' + Math.floor(1000 + Math.random() * 9000),
+    code: 'HDG-',
     name: '',
     date: new Date().toISOString().split('T')[0],
     description: '',
-    version: '1.0',
+    version: 'A',
     stage: 'Ingeniería de Detalle',
     commune: '',
     region: ''
@@ -144,7 +145,7 @@ const App: React.FC = () => {
       localStorage.setItem('hidrogestion_v10_projects', JSON.stringify(projects));
       localStorage.setItem('hidrogestion_v10_library', JSON.stringify(libraryNodes));
       localStorage.setItem('hidrogestion_v10_credits', credits.toString());
-      
+
       const timer = setTimeout(() => setIsAutoSaving(false), 800);
       return () => clearTimeout(timer);
     }
@@ -156,7 +157,7 @@ const App: React.FC = () => {
   // --- Auditoría Global de Capítulo ---
   const chapterNodes = useMemo(() => {
     if (!activeCategory) return [];
-    return activeCategory.analyses.flatMap((a, idx) => 
+    return activeCategory.analyses.flatMap((a, idx) =>
       (a.result?.nodes || []).map(node => ({ ...node, docIndex: idx + 1 }))
     );
   }, [activeCategory]);
@@ -216,8 +217,8 @@ const App: React.FC = () => {
       }
     });
     return missing.sort((a, b) => {
-        if (a.type !== b.type) return a.type.localeCompare(b.type);
-        return a.number - b.number;
+      if (a.type !== b.type) return a.type.localeCompare(b.type);
+      return a.number - b.number;
     });
   }, [chapterNodes]);
 
@@ -238,10 +239,10 @@ const App: React.FC = () => {
 
   const handleToggleMissingNodeReport = (nodeKey: string) => {
     setNodesToReportMissing(prev => {
-        const newSet = new Set(prev);
-        if (newSet.has(nodeKey)) newSet.delete(nodeKey);
-        else newSet.add(nodeKey);
-        return newSet;
+      const newSet = new Set(prev);
+      if (newSet.has(nodeKey)) newSet.delete(nodeKey);
+      else newSet.add(nodeKey);
+      return newSet;
     });
   };
 
@@ -294,14 +295,14 @@ const App: React.FC = () => {
 
   const handlePasteNode = () => {
     if (!activeProjectId || !activeCategoryId || !activeCategory || !copiedNode) return;
-    
+
     let nextNum = 1;
     const allNodeIds = activeCategory.analyses.flatMap(a => a.result?.nodes.map(n => n.id) || []);
     const numbers = allNodeIds.flatMap(idStr => {
       const matches = idStr.match(/\d+/g);
       return matches ? matches.map(m => parseInt(m, 10)) : [];
     }).filter(n => !isNaN(n));
-    
+
     if (numbers.length > 0) nextNum = Math.max(...numbers) + 1;
     const formattedId = nextNum.toString().padStart(2, '0');
 
@@ -310,7 +311,7 @@ const App: React.FC = () => {
       id: formattedId,
       nodeName: `${copiedNode.nodeName} (Copia)`,
     };
-    
+
     const pasteAnalysis: FileAnalysis = {
       id: generateId(),
       image: '',
@@ -496,26 +497,24 @@ const App: React.FC = () => {
     setNotification('APU Exportado.');
   };
 
-  const handleExportSummaryTable = () => {
-    if (!activeCategory) return;
+  const generateSummaryCSV = (nodes: HydraulicNode[], filename: string) => {
+    if (nodes.length === 0) return alert("No hay nudos para exportar.");
 
-    const rawNodes = activeCategory.analyses.flatMap(a => a.result?.nodes || []);
+    // Sort nodes by ID
     const expandedNodes: HydraulicNode[] = [];
-    rawNodes.forEach(node => {
+    nodes.forEach(node => {
       const prefix = getPrefixLabel(node.type);
-      // Fix: Explicitly type numericIds as string[] to avoid 'never' type inference issues
       const numericIds: string[] = node.id.match(/\d+/g) || [];
       if (numericIds.length > 0) {
         numericIds.forEach(individualId => {
-            const formattedId = prefix ? `${prefix}-${parseInt(individualId, 10)}` : individualId.padStart(2, '0');
-            expandedNodes.push({ ...node, id: formattedId });
+          const formattedId = prefix ? `${prefix}-${parseInt(individualId, 10)}` : individualId.padStart(2, '0');
+          expandedNodes.push({ ...node, id: formattedId });
         });
       } else {
         expandedNodes.push(node);
       }
     });
 
-    if (expandedNodes.length === 0) return alert("No hay nudos para exportar.");
     expandedNodes.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
 
     const pieceDetailsMap = new Map<string, { name: string, material: string, diameter: string, union: string, weight: number }>();
@@ -608,11 +607,27 @@ const App: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.setAttribute("href", url);
-    link.setAttribute("download", `RESUMEN_PIEZAS_${activeCategory.name.replace(/\s+/g, '_')}.csv`);
+    link.setAttribute("download", filename);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     setNotification('Tabla de Resumen Exportada.');
+  };
+
+  const handleExportSummaryTable = () => {
+    if (!activeCategory) return;
+    const rawNodes = activeCategory.analyses.flatMap(a => a.result?.nodes || []);
+    generateSummaryCSV(rawNodes, `RESUMEN_PIEZAS_${activeCategory.name.replace(/\s+/g, '_')}.csv`);
+  };
+
+  const handleExportAnalysisTable = (analysisId: string) => {
+    if (!activeCategory) return;
+    const analysis = activeCategory.analyses.find(a => a.id === analysisId);
+    if (!analysis || !analysis.result) return;
+
+    // Fallback name if customName is missing, using ID or index if available (passed from card logic usually, but here we just use what we have)
+    const namePart = analysis.customName || `Doc_${analysis.id.slice(0, 4)}`;
+    generateSummaryCSV(analysis.result.nodes, `RESUMEN_PIEZAS_DOC_${namePart.replace(/\s+/g, '_')}.csv`);
   };
 
   const handleSaveToDrive = async () => {
@@ -698,7 +713,7 @@ const App: React.FC = () => {
     e.stopPropagation();
     const p = projects.find(x => x.id === projectId);
     const c = p?.categories.find(x => x.id === categoryId);
-    if(c) setDeleteConfirm({ show: true, type: 'category', projectId, categoryId, name: c.name });
+    if (c) setDeleteConfirm({ show: true, type: 'category', projectId, categoryId, name: c.name });
   };
 
   // --- Manejo de Análisis e IA ---
@@ -823,9 +838,69 @@ const App: React.FC = () => {
           } : a)
         } : c)
       } : p));
-      setNotification('Nudo eliminado.');
+      setDeleteConfirm({ ...deleteConfirm, show: false });
     }
-    setDeleteConfirm({ ...deleteConfirm, show: false });
+  }; // Fixed: properly closed executeDeletion
+
+  const [targetAnalysisId, setTargetAnalysisId] = useState<string | null>(null);
+
+  const handleRequestAddNode = (analysisId: string) => {
+    setTargetAnalysisId(analysisId);
+    setShowAddNodeModal(true);
+  };
+
+  const handleAddNodeToAnalysis = (analysisId: string) => {
+    if (!activeProjectId || !activeCategoryId) return;
+
+    setProjects(prev => prev.map(p => {
+      if (p.id !== activeProjectId) return p;
+
+      return {
+        ...p,
+        categories: p.categories.map(c => {
+          if (c.id !== activeCategoryId) return c;
+
+          return {
+            ...c,
+            analyses: c.analyses.map(a => {
+              if (a.id !== analysisId) return a;
+
+              // Calculate new ID based on existing nodes in this analysis or global context if needed
+              const currentNodes = a.result?.nodes || [];
+              const allNodeIds = currentNodes.map(n => n.id);
+
+              let nextNum = 1;
+              const numbers = allNodeIds.flatMap(idStr => {
+                const matches = idStr.match(/\d+/g);
+                return matches ? matches.map(m => parseInt(m, 10)) : [];
+              }).filter(n => !isNaN(n));
+
+              if (numbers.length > 0) nextNum = Math.max(...numbers) + 1;
+
+              const formattedId = nextNum.toString().padStart(2, '0');
+              const newNode: HydraulicNode = {
+                id: formattedId,
+                nodeName: `Nudo Manual ${formattedId}`,
+                type: 'Numerico',
+                pieces: [],
+                anchorageCount: 0
+              };
+
+              const newResult: AnalysisResult = a.result ? {
+                ...a.result,
+                nodes: [...a.result.nodes, newNode]
+              } : {
+                nodes: [newNode],
+                summary: 'Análisis con nudos manuales'
+              };
+
+              return { ...a, result: newResult, status: 'done' as const };
+            })
+          };
+        })
+      };
+    }));
+    setNotification('Nudo agregado al documento.');
   };
 
   const handleSaveToLibrary = (node: HydraulicNode) => {
@@ -847,6 +922,60 @@ const App: React.FC = () => {
 
   const handleCreateEmptyNode = () => {
     if (!activeProjectId || !activeCategoryId || !activeCategory) return;
+
+    // If targetAnalysisId is set, add to that analysis
+    if (targetAnalysisId) {
+      setProjects(prev => prev.map(p => {
+        if (p.id !== activeProjectId) return p;
+        return {
+          ...p,
+          categories: p.categories.map(c => {
+            if (c.id !== activeCategoryId) return c;
+            return {
+              ...c,
+              analyses: c.analyses.map(a => {
+                if (a.id !== targetAnalysisId) return a;
+
+                const currentNodes = a.result?.nodes || [];
+                const allNodeIds = currentNodes.map(n => n.id);
+                let nextNum = 1;
+                const numbers = allNodeIds.flatMap(idStr => {
+                  const matches = idStr.match(/\d+/g);
+                  return matches ? matches.map(m => parseInt(m, 10)) : [];
+                }).filter(n => !isNaN(n));
+                if (numbers.length > 0) nextNum = Math.max(...numbers) + 1;
+
+                const formattedId = nextNum.toString().padStart(2, '0');
+                const newNode: HydraulicNode = {
+                  id: formattedId,
+                  nodeName: `Nudo Manual ${formattedId}`,
+                  type: 'Numerico',
+                  pieces: [],
+                  anchorageCount: 0,
+                  isManual: true
+                };
+
+                const newResult: AnalysisResult = a.result ? {
+                  ...a.result,
+                  nodes: [...a.result.nodes, newNode]
+                } : {
+                  nodes: [newNode],
+                  summary: 'Análisis con nudos manuales'
+                };
+
+                return { ...a, result: newResult, status: 'done' as const };
+              })
+            };
+          })
+        };
+      }));
+      setNotification('Nudo vacío agregado al documento.');
+      setShowAddNodeModal(false);
+      setTargetAnalysisId(null);
+      return;
+    }
+
+    // Default behavior: Create new Manual Analysis
     let nextNum = 1;
     const allNodeIds = activeCategory.analyses.flatMap(a => a.result?.nodes.map(n => n.id) || []);
     const numbers = allNodeIds.flatMap(idStr => {
@@ -855,18 +984,76 @@ const App: React.FC = () => {
     }).filter(n => !isNaN(n));
     if (numbers.length > 0) nextNum = Math.max(...numbers) + 1;
     const formattedId = nextNum.toString().padStart(2, '0');
-    const newNode: HydraulicNode = { id: formattedId, nodeName: `Nudo ${formattedId}`, type: 'Numerico', pieces: [], anchorageCount: 0 };
+    const newNode: HydraulicNode = {
+      id: formattedId,
+      nodeName: `Nudo ${formattedId}`,
+      type: 'Numerico',
+      pieces: [],
+      anchorageCount: 0,
+      isManual: true
+    };
     const manualAnalysis: FileAnalysis = { id: generateId(), image: '', status: 'done', result: { nodes: [newNode], summary: `Manual (N° ${formattedId})` } };
     setProjects(prev => prev.map(p => p.id === activeProjectId ? {
       ...p,
       categories: p.categories.map(c => c.id === activeCategoryId ? { ...c, analyses: [...c.analyses, manualAnalysis] } : c)
     } : p));
     setNotification('Nudo manual creado.');
+    setShowAddNodeModal(false);
   };
 
   const handleUseLibraryNode = (node: LibraryNode) => {
     if (!activeProjectId || !activeCategoryId || !activeCategory) return;
-    
+
+    // If targetAnalysisId is set, add to that analysis
+    if (targetAnalysisId) {
+      setProjects(prev => prev.map(p => {
+        if (p.id !== activeProjectId) return p;
+        return {
+          ...p,
+          categories: p.categories.map(c => {
+            if (c.id !== activeCategoryId) return c;
+            return {
+              ...c,
+              analyses: c.analyses.map(a => {
+                if (a.id !== targetAnalysisId) return a;
+
+                const currentNodes = a.result?.nodes || [];
+                const allNodeIds = currentNodes.map(n => n.id);
+                let nextNum = 1;
+                const numbers = allNodeIds.flatMap(idStr => {
+                  const matches = idStr.match(/\d+/g);
+                  return matches ? matches.map(m => parseInt(m, 10)) : [];
+                }).filter(n => !isNaN(n));
+                if (numbers.length > 0) nextNum = Math.max(...numbers) + 1;
+
+                const formattedId = nextNum.toString().padStart(2, '0');
+                const newNode: HydraulicNode = {
+                  ...node,
+                  id: formattedId,
+                  isManual: true
+                };
+
+                const newResult: AnalysisResult = a.result ? {
+                  ...a.result,
+                  nodes: [...a.result.nodes, newNode]
+                } : {
+                  nodes: [newNode],
+                  summary: 'Análisis con nudos manuales'
+                };
+
+                return { ...a, result: newResult, status: 'done' as const };
+              })
+            };
+          })
+        };
+      }));
+      setNotification('Nudo de biblioteca agregado al documento.');
+      setShowLibraryModal(false);
+      setTargetAnalysisId(null);
+      return;
+    }
+
+    // Default behavior: Create new Analysis from Library Node
     let nextNum = 1;
     const allNodeIds = activeCategory.analyses.flatMap(a => a.result?.nodes.map(n => n.id) || []);
     const numbers = allNodeIds.flatMap(idStr => {
@@ -876,13 +1063,13 @@ const App: React.FC = () => {
     if (numbers.length > 0) nextNum = Math.max(...numbers) + 1;
     const formattedId = nextNum.toString().padStart(2, '0');
 
-    const newNode: HydraulicNode = { ...node, id: formattedId };
-    
+    const newNode: HydraulicNode = { ...node, id: formattedId, isManual: true };
+
     const newAnalysis: FileAnalysis = {
-        id: generateId(),
-        image: '',
-        status: 'done',
-        result: { nodes: [newNode], summary: `Desde Biblioteca: ${node.nodeName}` }
+      id: generateId(),
+      image: '',
+      status: 'done',
+      result: { nodes: [newNode], summary: `Desde Biblioteca: ${node.nodeName}` }
     };
     setProjects(prev => prev.map(p => p.id === activeProjectId ? {
       ...p,
@@ -902,7 +1089,7 @@ const App: React.FC = () => {
         projects={projects} activeProjectId={activeProjectId} activeCategoryId={activeCategoryId} isSidebarOpen={isSidebarOpen} credits={credits} initialCredits={INITIAL_CREDITS}
         onToggleProject={(id) => { setActiveProjectId(id === activeProjectId ? null : id); setActiveCategoryId(null); }}
         onSelectCategory={setActiveCategoryId} onOpenNewProject={handleOpenNewProject} onOpenEditProject={handleOpenEditProject}
-        onDeleteProject={(pid, e) => { e.stopPropagation(); const p = projects.find(x => x.id === pid); if(p) setDeleteConfirm({ show: true, type: 'project', projectId: pid, name: p.name }); }}
+        onDeleteProject={(pid, e) => { e.stopPropagation(); const p = projects.find(x => x.id === pid); if (p) setDeleteConfirm({ show: true, type: 'project', projectId: pid, name: p.name }); }}
         onExportProject={handleExportProject}
         onOpenLibrary={() => setShowLibraryModal(true)} onAddCategory={handleAddCategory} onEditCategory={handleEditCategory} onRemoveCategory={handleRemoveCategory}
         onImportProject={handleImportProject} onMoveCategory={handleMoveCategory}
@@ -922,9 +1109,9 @@ const App: React.FC = () => {
                   <button onClick={() => handleOpenEditProject(activeProject.id)} className="text-[#88C13E] hover:text-[#004071] transition-colors"><i className="fa-solid fa-pen-to-square text-sm"></i></button>
                   <span className="text-[10px] font-black text-white uppercase tracking-widest bg-[#004071] px-2 py-1 rounded-md">{activeProject.code}</span>
                   {isAutoSaving && (
-                     <span className="text-[8px] font-black text-[#88C13E] uppercase tracking-widest bg-[#88C13E]/10 px-2 py-1 rounded animate-pulse">
-                        <i className="fa-solid fa-sync mr-1"></i> Auto-guardando
-                     </span>
+                    <span className="text-[8px] font-black text-[#88C13E] uppercase tracking-widest bg-[#88C13E]/10 px-2 py-1 rounded animate-pulse">
+                      <i className="fa-solid fa-sync mr-1"></i> Auto-guardando
+                    </span>
                   )}
                 </div>
                 {activeCategory && <div className="mt-2"><span className="text-[9px] font-black text-[#88C13E] uppercase tracking-widest bg-[#88C13E]/10 px-2 py-0.5 rounded-md">Capítulo: {activeCategory.name}</span></div>}
@@ -948,10 +1135,7 @@ const App: React.FC = () => {
                       </button>
                     </div>
                   )}
-                  <button onClick={() => setShowAddNodeModal(true)} className="px-4 py-3 bg-[#004071] text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-sm flex items-center gap-2 hover:bg-[#002D50]">
-                    <i className="fa-solid fa-plus text-xs"></i> Manual
-                  </button>
-                  <button 
+                  <button
                     onClick={handlePasteNode}
                     disabled={!copiedNode || !activeCategoryId}
                     className="px-4 py-3 bg-[#004071] text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-sm flex items-center gap-2 hover:bg-[#002D50] disabled:opacity-50 disabled:cursor-not-allowed"
@@ -975,7 +1159,7 @@ const App: React.FC = () => {
                     {isAnythingToReportGlobal && (
                       <div className="space-y-6 mb-10">
                         <div className="bg-blue-50 border border-blue-200 rounded-[1.5rem] overflow-hidden shadow-sm animate-in slide-in-from-top-4 duration-500">
-                          <div 
+                          <div
                             onClick={() => toggleSection('audit')}
                             className="p-6 flex items-start gap-5 cursor-pointer hover:bg-blue-100/50 transition-colors"
                           >
@@ -1010,7 +1194,7 @@ const App: React.FC = () => {
 
                         {unifiedNodesSummaryGlobal.length > 0 && !collapsedSections.audit && (
                           <div className="bg-green-50 border border-green-200 rounded-[1.5rem] overflow-hidden shadow-sm animate-in fade-in duration-500">
-                            <div 
+                            <div
                               onClick={() => toggleSection('schemes')}
                               className="p-6 flex items-start gap-5 cursor-pointer hover:bg-green-100/50 transition-colors"
                             >
@@ -1027,9 +1211,9 @@ const App: React.FC = () => {
                                     {unifiedNodesSummaryGlobal.map((node, index) => (
                                       <p key={index} className="text-[10px] text-green-700 font-bold uppercase opacity-90 leading-relaxed">
                                         Para <span className="text-green-900 font-black">"{node.nodeName}"</span>, se detectaron dibujos idénticos para <span className="text-green-900 font-black">{formatIdsForDisplayGlobal((node.sourceGroupings || [])[0], node.type)}</span> y {(node.sourceGroupings || []).slice(1).map((group, i) => (
-                                            <span key={i}>
-                                                <span className="text-green-900 font-black">{formatIdsForDisplayGlobal(group as string, node.type)}</span>{i < (node.sourceGroupings?.length || 0) - 2 ? ' y ' : ''}
-                                            </span>
+                                          <span key={i}>
+                                            <span className="text-green-900 font-black">{formatIdsForDisplayGlobal(group as string, node.type)}</span>{i < (node.sourceGroupings?.length || 0) - 2 ? ' y ' : ''}
+                                          </span>
                                         ))}.
                                       </p>
                                     ))}
@@ -1042,7 +1226,7 @@ const App: React.FC = () => {
 
                         {missingNodesGlobal.length > 0 && !collapsedSections.audit && (
                           <div className="bg-sky-50 border border-sky-200 rounded-[1.5rem] overflow-hidden shadow-sm">
-                            <div 
+                            <div
                               onClick={() => toggleSection('missing')}
                               className="p-6 flex items-start gap-5 cursor-pointer hover:bg-sky-100/50 transition-colors"
                             >
@@ -1058,21 +1242,21 @@ const App: React.FC = () => {
                                   <>
                                     <p className="text-xs text-sky-700 mb-4 uppercase font-bold opacity-70">Evaluación de saltos en la secuencia de todo el capítulo:</p>
                                     <div className="mb-6">
-                                      <label 
+                                      <label
                                         className="inline-flex items-center gap-2 px-3 py-1.5 bg-white border-2 border-sky-300 rounded-lg cursor-pointer hover:bg-sky-100 transition-colors font-black text-sky-900 text-xs"
                                         onClick={(e) => e.stopPropagation()}
                                       >
                                         <input
                                           type="checkbox"
                                           checked={nodesToReportMissing.size === missingNodesGlobal.length}
-                                          ref={el => { if(el) el.indeterminate = nodesToReportMissing.size > 0 && nodesToReportMissing.size < missingNodesGlobal.length; }}
+                                          ref={el => { if (el) el.indeterminate = nodesToReportMissing.size > 0 && nodesToReportMissing.size < missingNodesGlobal.length; }}
                                           onChange={(e) => { e.stopPropagation(); handleToggleSelectAllMissingNodes(); }}
                                           className="h-4 w-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500"
                                         />
                                         MARCAR TODOS
                                       </label>
                                     </div>
-                                    
+
                                     <div className="space-y-6">
                                       {(Object.entries(missingNodesGrouped) as [string, { type: string, number: number }[]][]).map(([type, nodes]) => (
                                         <div key={type} className="space-y-2">
@@ -1083,8 +1267,8 @@ const App: React.FC = () => {
                                               const prefix = getPrefixLabel(n.type);
                                               const label = prefix ? `${prefix}-${n.number}` : String(n.number).padStart(2, '0');
                                               return (
-                                                <label 
-                                                  key={nodeKey} 
+                                                <label
+                                                  key={nodeKey}
                                                   className="flex items-center gap-2 px-3 py-1.5 bg-white border border-sky-200 rounded-lg cursor-pointer hover:bg-sky-200 transition-colors"
                                                   onClick={(e) => e.stopPropagation()}
                                                 >
@@ -1113,19 +1297,21 @@ const App: React.FC = () => {
 
                     {activeCategory?.analyses.map((analysis, index) => (
                       <AnalysisCard
-                        key={analysis.id} 
-                        analysis={{...analysis, documentNumber: index + 1}} // Assign index here
-                        onProcess={processAnalysis} 
-                        onRemove={removeAnalysis} 
+                        key={analysis.id}
+                        analysis={{ ...analysis, documentNumber: index + 1 }} // Assign index here
+                        onProcess={processAnalysis}
+                        onRemove={removeAnalysis}
                         onUpdateAnalysisName={handleUpdateAnalysisName}
-                        onUpdateNode={handleUpdateNode} 
-                        onRemoveNode={handleRemoveNode} 
-                        onSaveToLibrary={handleSaveToLibrary} 
-                        searchTerm={searchTerm} 
-                        duplicateIds={chapterDuplicateIds} 
-                        credits={credits} 
-                        onCopyNode={handleCopyNode} 
+                        onUpdateNode={handleUpdateNode}
+                        onRemoveNode={handleRemoveNode}
+                        onSaveToLibrary={handleSaveToLibrary}
+                        onAddNode={handleRequestAddNode}
+                        searchTerm={searchTerm}
+                        duplicateIds={chapterDuplicateIds}
+                        credits={credits}
+                        onCopyNode={handleCopyNode}
                         activeProject={activeProject}
+                        onExportTable={handleExportAnalysisTable}
                       />
                     ))}
                     <div className="pt-10 border-t border-slate-200 flex flex-col items-center">
@@ -1151,7 +1337,7 @@ const App: React.FC = () => {
             <span className="text-xs font-black uppercase tracking-widest">{notification}</span>
           </div>
         )}
-        
+
         {showAddNodeModal && (
           <AddNodeModal
             onClose={() => setShowAddNodeModal(false)}
@@ -1175,17 +1361,17 @@ const App: React.FC = () => {
               </div>
               <div className="p-10 space-y-6">
                 <div className="p-6 bg-green-50 border border-green-100 rounded-3xl flex items-start gap-4">
-                   <div className="w-10 h-10 bg-[#88C13E] text-white rounded-xl flex items-center justify-center shrink-0">
-                      <i className="fa-solid fa-bolt"></i>
-                   </div>
-                   <div>
-                      <h4 className="text-sm font-black text-green-900 uppercase">Guardado Automático Activo</h4>
-                      <p className="text-xs text-green-700 mt-1">Todos los cambios se están guardando localmente en la memoria de este navegador automáticamente.</p>
-                   </div>
+                  <div className="w-10 h-10 bg-[#88C13E] text-white rounded-xl flex items-center justify-center shrink-0">
+                    <i className="fa-solid fa-bolt"></i>
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-black text-green-900 uppercase">Guardado Automático Activo</h4>
+                    <p className="text-xs text-green-700 mt-1">Todos los cambios se están guardando localmente en la memoria de este navegador automáticamente.</p>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 gap-4">
-                  <button 
+                  <button
                     onClick={handleExportLocal}
                     className="w-full flex items-center gap-6 p-6 bg-slate-50 hover:bg-white border-2 border-slate-100 hover:border-[#004071] rounded-[2rem] text-left transition-all group"
                   >
@@ -1198,7 +1384,7 @@ const App: React.FC = () => {
                     </div>
                   </button>
 
-                  <button 
+                  <button
                     onClick={handleSaveToDrive}
                     className="w-full flex items-center gap-6 p-6 bg-slate-50 opacity-60 border-2 border-slate-100 rounded-[2rem] text-left cursor-not-allowed"
                   >
@@ -1220,7 +1406,7 @@ const App: React.FC = () => {
             </div>
           </div>
         )}
-        
+
         {showLibraryModal && (
           <LibraryModal
             nodes={libraryNodes}
@@ -1233,7 +1419,7 @@ const App: React.FC = () => {
             onImportLibrary={handleImportLibrary}
           />
         )}
-        
+
         {deleteConfirm.show && (
           <div className="fixed inset-0 bg-[#002d50]/80 backdrop-blur-md z-[200] flex items-center justify-center p-4">
             <div className="bg-white w-full max-w-md rounded-[2.5rem] p-10 shadow-2xl text-center">
@@ -1271,7 +1457,7 @@ const App: React.FC = () => {
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Descripción</label>
                   <textarea value={projectForm.description} onChange={e => setProjectForm({ ...projectForm, description: e.target.value })} className="bg-slate-50 border border-slate-100 p-4 rounded-xl text-sm font-bold text-[#004071] h-20 resize-none"></textarea>
                 </div>
-                
+
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div className="flex flex-col gap-2">
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Etapa</label>
@@ -1321,11 +1507,11 @@ const App: React.FC = () => {
         )}
 
         {showAuditReportModal && activeProject && (
-          <AuditReportModal 
-              project={activeProject}
-              repeatedNodes={unifiedNodesSummaryGlobal}
-              missingNodes={selectedMissingNodesObjectsGlobal}
-              onClose={() => setShowAuditReportModal(false)}
+          <AuditReportModal
+            project={activeProject}
+            repeatedNodes={unifiedNodesSummaryGlobal}
+            missingNodes={selectedMissingNodesObjectsGlobal}
+            onClose={() => setShowAuditReportModal(false)}
           />
         )}
       </main>
@@ -1333,3 +1519,4 @@ const App: React.FC = () => {
   );
 };
 export default App;
+

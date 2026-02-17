@@ -14,6 +14,8 @@ interface ResultDisplayProps {
   onCopyNode: (node: HydraulicNode) => void;
   isManual: boolean;
   project?: Project;
+  onAddNode: () => void;
+  onExportTable?: () => void;
 }
 
 interface PieceRowProps {
@@ -50,13 +52,13 @@ const PieceRow: React.FC<PieceRowProps> = ({ piece, onUpdate, onRemove }) => {
         <div className="flex items-center gap-2">
           {isIncomplete && <i className="fa-solid fa-circle-question text-amber-500 text-xs" title="Item a revisar"></i>}
           {isEditing ? (
-            <input 
-              type="text" 
-              value={piece.name} 
-              onChange={e => onUpdate({ name: e.target.value.toUpperCase() })} 
-              className="bg-white border rounded px-2 py-1 w-full font-bold text-slate-700" 
-              onBlur={() => setIsEditing(false)} 
-              autoFocus 
+            <input
+              type="text"
+              value={piece.name}
+              onChange={e => onUpdate({ name: e.target.value.toUpperCase() })}
+              className="bg-white border rounded px-2 py-1 w-full font-bold text-slate-700"
+              onBlur={() => setIsEditing(false)}
+              autoFocus
             />
           ) : (
             <span className={`font-bold text-slate-700 cursor-pointer ${!piece.name ? 'text-slate-300 italic underline decoration-dotted' : ''}`} onClick={() => setIsEditing(true)}>
@@ -72,12 +74,12 @@ const PieceRow: React.FC<PieceRowProps> = ({ piece, onUpdate, onRemove }) => {
         </select>
       </td>
       <td className="px-6 py-4 text-center">
-        <input 
-          type="text" 
-          placeholder='Ej: 3", 75mm, 160mm' 
-          value={piece.diameter} 
-          onChange={e => onUpdate({ diameter: e.target.value })} 
-          className={`bg-transparent border-none text-center font-mono font-black text-[#004071] w-full outline-none placeholder:text-[9px] placeholder:font-normal placeholder:opacity-50 ${!piece.diameter ? 'placeholder:text-amber-500' : ''}`} 
+        <input
+          type="text"
+          placeholder='Ej: 3", 75mm, 160mm'
+          value={piece.diameter}
+          onChange={e => onUpdate({ diameter: e.target.value })}
+          className={`bg-transparent border-none text-center font-mono font-black text-[#004071] w-full outline-none placeholder:text-[9px] placeholder:font-normal placeholder:opacity-50 ${!piece.diameter ? 'placeholder:text-amber-500' : ''}`}
         />
       </td>
       <td className="px-6 py-4 text-center">
@@ -101,9 +103,10 @@ interface NodeCardProps {
   onSave: () => void;
   onCopy: () => void;
   isDuplicate: boolean;
+  onDelete: () => void;
 }
 
-const NodeCard: React.FC<NodeCardProps> = ({ node, index, onUpdate, onRemove, onSave, onCopy, isDuplicate }) => {
+const NodeCard: React.FC<NodeCardProps> = ({ node, index, onUpdate, onRemove, onSave, onCopy, isDuplicate, onDelete }) => {
   const [isEditingHeader, setIsEditingHeader] = useState(false);
   const [editedName, setEditedName] = useState(node.nodeName);
   const [editedId, setEditedId] = useState(node.id);
@@ -126,9 +129,9 @@ const NodeCard: React.FC<NodeCardProps> = ({ node, index, onUpdate, onRemove, on
   };
 
   const handleSaveHeader = () => {
-    onUpdate({ 
-      nodeName: editedName.toUpperCase(), 
-      id: normalizeIdString(editedId) 
+    onUpdate({
+      nodeName: editedName.toUpperCase(),
+      id: normalizeIdString(editedId)
     });
     setIsEditingHeader(false);
   };
@@ -146,12 +149,12 @@ const NodeCard: React.FC<NodeCardProps> = ({ node, index, onUpdate, onRemove, on
   const handleRemovePiece = (idx: number) => {
     onUpdate({ pieces: node.pieces.filter((_, i) => i !== idx) });
   };
-  
+
   const handleEditAnchorage = () => {
     setEditedAnchorageCount(node.anchorageCount || 0);
     setIsEditingAnchorage(true);
   };
-  
+
   const handleSaveAnchorage = () => {
     onUpdate({ anchorageCount: editedAnchorageCount });
     setIsEditingAnchorage(false);
@@ -160,7 +163,7 @@ const NodeCard: React.FC<NodeCardProps> = ({ node, index, onUpdate, onRemove, on
   const formatIdsForDisplay = (idStr: string, type: string) => {
     const matches = idStr.match(/\d+/g);
     if (!matches) return idStr;
-    
+
     const prefixMap: Record<string, string> = {
       'Corte': 'C',
       'Ventosa': 'V',
@@ -168,9 +171,9 @@ const NodeCard: React.FC<NodeCardProps> = ({ node, index, onUpdate, onRemove, on
       'Reductora': 'R',
       'Numerico': ''
     };
-    
+
     const prefix = prefixMap[type] || '';
-    
+
     return matches.map(m => {
       const num = parseInt(m, 10);
       return prefix ? `${prefix}-${num}` : m.padStart(2, '0');
@@ -181,7 +184,7 @@ const NodeCard: React.FC<NodeCardProps> = ({ node, index, onUpdate, onRemove, on
     <div className={`bg-white border-2 rounded-[2rem] overflow-hidden mb-6 shadow-sm transition-all group w-full ${hasError ? 'border-amber-400' : 'border-[#88C13E]'}`}>
       <div className={`px-8 py-6 border-b flex justify-between items-center transition-colors ${hasError ? 'bg-amber-50/30' : 'bg-green-50/30 group-hover:bg-white'}`}>
         <div className="flex items-center gap-6 flex-grow">
-          <div className={`w-10 h-10 rounded-2xl flex items-center justify-center font-black text-lg shadow-lg shrink-0 ${hasError ? 'bg-amber-500 text-white' : 'bg-[#88C13E] text-white'}`}>
+          <div className={`w-10 h-10 rounded-2xl flex items-center justify-center font-black text-lg shadow-lg shrink-0 ${hasError ? 'bg-amber-500 text-white' : node.isManual ? 'bg-purple-600 text-white' : 'bg-[#88C13E] text-white'}`}>
             {index + 1}
           </div>
           <div className="flex flex-col flex-grow">
@@ -198,37 +201,38 @@ const NodeCard: React.FC<NodeCardProps> = ({ node, index, onUpdate, onRemove, on
                 </h4>
                 {isDuplicate && <span className="bg-amber-600 text-white text-[8px] font-black px-2 py-0.5 rounded-full uppercase ml-2 animate-pulse">ID Duplicado en {node.type}</span>}
                 {incompleteCount > 0 && <span className="bg-amber-100 text-amber-700 text-[8px] font-black px-2 py-0.5 rounded-full uppercase">Revisar {incompleteCount} items</span>}
-                
+
                 {isEditingAnchorage ? (
                   <div className="ml-4 flex items-center gap-2">
-                     <i className="fa-solid fa-cubes text-xs text-slate-400"></i>
-                     <input
-                       type="number"
-                       value={editedAnchorageCount}
-                       onChange={e => setEditedAnchorageCount(parseInt(e.target.value, 10) || 0)}
-                       onBlur={handleSaveAnchorage}
-                       onKeyDown={e => { if (e.key === 'Enter') handleSaveAnchorage(); if (e.key === 'Escape') setIsEditingAnchorage(false); }}
-                       className="w-16 bg-white border border-[#88C13E] rounded-lg px-2 py-0.5 text-center font-black text-[#004071]"
-                       autoFocus
-                     />
+                    <i className="fa-solid fa-cubes text-xs text-slate-400"></i>
+                    <input
+                      type="number"
+                      value={editedAnchorageCount}
+                      onChange={e => setEditedAnchorageCount(parseInt(e.target.value, 10) || 0)}
+                      onBlur={handleSaveAnchorage}
+                      onKeyDown={e => { if (e.key === 'Enter') handleSaveAnchorage(); if (e.key === 'Escape') setIsEditingAnchorage(false); }}
+                      className="w-16 bg-white border border-[#88C13E] rounded-lg px-2 py-0.5 text-center font-black text-[#004071]"
+                      autoFocus
+                    />
                   </div>
                 ) : (
-                   <div 
-                     onClick={handleEditAnchorage}
-                     className="ml-4 flex items-center gap-2 bg-slate-100 text-slate-500 text-[9px] font-black px-2.5 py-1 rounded-full cursor-pointer hover:bg-slate-200"
-                     title="Editar anclajes">
-                     <i className="fa-solid fa-cubes text-xs"></i>
-                     ANCLAJES x {node.anchorageCount || 0}
-                   </div>
+                  <div
+                    onClick={handleEditAnchorage}
+                    className="ml-4 flex items-center gap-2 bg-slate-100 text-slate-500 text-[9px] font-black px-2.5 py-1 rounded-full cursor-pointer hover:bg-slate-200"
+                    title="Editar anclajes">
+                    <i className="fa-solid fa-cubes text-xs"></i>
+                    ANCLAJES x {node.anchorageCount || 0}
+                  </div>
                 )}
               </div>
             )}
           </div>
         </div>
         <div className="flex items-center gap-2">
-            <button onClick={onSave} className="px-4 py-2 bg-slate-100 text-[#004071] rounded-xl text-[9px] font-black uppercase hover:bg-slate-200 transition-all" title="Guardar en Biblioteca"><i className="fa-solid fa-bookmark mr-2"></i>Biblioteca</button>
-            <button onClick={onCopy} className="px-4 py-2 bg-slate-100 text-[#004071] rounded-xl text-[9px] font-black uppercase hover:bg-slate-200 transition-all" title="Copiar Nudo"><i className="fa-solid fa-copy mr-2"></i>Copiar</button>
-            <button onClick={handleAddPiece} className="px-4 py-2 bg-[#88C13E] text-white rounded-xl text-[9px] font-black uppercase hover:shadow-lg transition-all"><i className="fa-solid fa-plus mr-2"></i>Pieza</button>
+          <button onClick={onSave} className="px-4 py-2 bg-slate-100 text-[#004071] rounded-xl text-[9px] font-black uppercase hover:bg-slate-200 transition-all" title="Guardar en Biblioteca"><i className="fa-solid fa-bookmark mr-2"></i>Biblioteca</button>
+          <button onClick={onCopy} className="px-4 py-2 bg-slate-100 text-[#004071] rounded-xl text-[9px] font-black uppercase hover:bg-slate-200 transition-all" title="Copiar Nudo"><i className="fa-solid fa-copy mr-2"></i>Copiar</button>
+          <button onClick={onDelete} className="px-4 py-2 bg-red-50 text-red-600 rounded-xl text-[9px] font-black uppercase hover:bg-red-100 transition-all" title="Eliminar Nudo"><i className="fa-solid fa-trash mr-2"></i>Eliminar</button>
+          <button onClick={handleAddPiece} className="px-4 py-2 bg-[#88C13E] text-white rounded-xl text-[9px] font-black uppercase hover:shadow-lg transition-all"><i className="fa-solid fa-plus mr-2"></i>Pieza</button>
         </div>
       </div>
       <div className="overflow-x-auto w-full">
@@ -253,8 +257,8 @@ const NodeCard: React.FC<NodeCardProps> = ({ node, index, onUpdate, onRemove, on
   );
 };
 
-const ResultDisplay: React.FC<ResultDisplayProps> = ({ analysisId, result, searchTerm, duplicateIds, onUpdateNode, onRemoveNode, onRemoveAnalysis, onSaveToLibrary, onProcess, onCopyNode, isManual, project }) => {
-  
+const ResultDisplay: React.FC<ResultDisplayProps> = ({ analysisId, result, searchTerm, duplicateIds, onUpdateNode, onRemoveNode, onRemoveAnalysis, onSaveToLibrary, onProcess, onCopyNode, isManual, project, onAddNode, onExportTable }) => {
+
   // Explicitly type filteredNodes as HydraulicNode[] to avoid inference issues.
   const filteredNodes = useMemo<HydraulicNode[]>(() => {
     let nodes = [...result.nodes];
@@ -280,7 +284,7 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({ analysisId, result, searc
           <div>
             <h5 className="text-[11px] font-black text-amber-900 uppercase tracking-widest mb-1">Items a revisar por el usuario: {totalIncomplete}</h5>
             <p className="text-[10px] text-amber-700 font-bold uppercase leading-relaxed opacity-80">
-              Se han detectado componentes con datos incompletos. <br/>
+              Se han detectado componentes con datos incompletos. <br />
               <span className="text-amber-900">Por favor, revisa las filas resaltadas en color ámbar en el detalle de cada nudo.</span>
             </p>
           </div>
@@ -296,16 +300,16 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({ analysisId, result, searc
         </div>
         <div className="flex items-center gap-2">
           {!isManual && (
-            <button 
-              onClick={() => onProcess(analysisId)} 
+            <button
+              onClick={() => onProcess(analysisId)}
               className="text-white/60 hover:text-white p-2 transition-colors"
               title="Re-analizar"
             >
               <i className="fa-solid fa-sync-alt"></i>
             </button>
           )}
-          <button 
-            onClick={onRemoveAnalysis} 
+          <button
+            onClick={onRemoveAnalysis}
             className="text-white/30 hover:text-red-400 p-2 transition-colors"
             title="Eliminar análisis"
           >
@@ -314,21 +318,40 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({ analysisId, result, searc
         </div>
       </div>
 
+      <div className="flex justify-end -mt-4 mb-4 gap-2">
+        {onExportTable && (
+          <button
+            onClick={onExportTable}
+            className="px-4 py-2 bg-[#88C13E] text-white rounded-xl text-[10px] font-black uppercase hover:bg-[#a6bf2e] hover:shadow-lg transition-all flex items-center gap-2"
+            title="Exportar tabla resumen"
+          >
+            <i className="fa-solid fa-table"></i> TABLA
+          </button>
+        )}
+        <button
+          onClick={onAddNode}
+          className="px-4 py-2 bg-[#004071] text-white rounded-xl text-[10px] font-black uppercase hover:bg-[#88C13E] hover:shadow-lg transition-all flex items-center gap-2"
+        >
+          <i className="fa-solid fa-plus-circle"></i> Agregar Nudo
+        </button>
+      </div>
+
       <div className="w-full">
         {filteredNodes.map((node, idx) => {
           const nodeNumericIds: string[] = node.id.match(/\d+/g) || [];
           const isDuplicate = nodeNumericIds.some(id => duplicateIds.has(`${node.type}:${id.toLowerCase()}`));
-          
+
           return (
-            <NodeCard 
-              key={`${node.id}-${idx}`} 
-              node={node} 
-              index={idx} 
+            <NodeCard
+              key={`${node.id}-${idx}`}
+              node={node}
+              index={idx}
               isDuplicate={isDuplicate}
-              onUpdate={u => onUpdateNode(node.id, u)} 
-              onRemove={() => onRemoveNode(node.id)} 
+              onUpdate={u => onUpdateNode(node.id, u)}
+              onRemove={() => onRemoveNode(node.id)}
               onSave={() => onSaveToLibrary(node)}
               onCopy={() => onCopyNode(node)}
+              onDelete={() => onRemoveNode(node.id)}
             />
           );
         })}
@@ -338,3 +361,5 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({ analysisId, result, searc
 };
 
 export default ResultDisplay;
+
+
