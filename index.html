@@ -66,14 +66,7 @@
         }
     </style>
     <script>
-        // Configuración crítica de entorno
-        window.process = { 
-            env: { 
-                API_KEY: "" // Se inyecta automáticamente en Vercel
-            } 
-        };
-
-        // Capturador de errores globales para evitar el spinner infinito sin info
+        window.process = { env: { API_KEY: "" } };
         window.onerror = function(msg, url, line, col, error) {
             const root = document.getElementById('root');
             if (root && root.innerHTML === "") {
@@ -95,7 +88,8 @@
     "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
     "react/": "https://esm.sh/react@^19.2.4/",
     "@google/genai": "https://esm.sh/@google/genai@^1.41.0",
-    "jspdf": "https://esm.sh/jspdf@^4.1.0"
+    "jspdf": "https://esm.sh/jspdf@^4.1.0",
+    "xlsx": "https://esm.sh/xlsx@0.18.5"
   }
 }
 </script>
