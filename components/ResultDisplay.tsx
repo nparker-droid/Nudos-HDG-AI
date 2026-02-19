@@ -57,7 +57,13 @@ const PieceRow: React.FC<PieceRowProps> = ({ piece, onUpdate, onRemove }) => {
               value={piece.name}
               onChange={e => onUpdate({ name: e.target.value.toUpperCase() })}
               className="bg-white border rounded px-2 py-1 w-full font-bold text-slate-700"
-              onBlur={() => setIsEditing(false)}
+              onBlur={() => {
+                if (piece.name) {
+                  onUpdate({ name: piece.name.trim().toUpperCase() });
+                }
+                setIsEditing(false);
+              }}
+              list="shared-piece-suggestions"
               autoFocus
             />
           ) : (
@@ -274,8 +280,28 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({ analysisId, result, searc
     }, 0);
   }, [filteredNodes]);
 
+  const existingPieceNames = useMemo(() => {
+    const names = new Set<string>();
+    if (project) {
+      project.categories.forEach(c => 
+        c.analyses.forEach(a => 
+          a.result?.nodes.forEach(n => 
+            n.pieces.forEach(p => {
+              if (p.name) names.add(p.name.trim().toUpperCase());
+            })
+          )
+        )
+      );
+    }
+    return Array.from(names).sort();
+  }, [project]);
+
   return (
     <div className="space-y-8 w-full">
+      <datalist id="shared-piece-suggestions">
+        {existingPieceNames.map(name => <option key={name} value={name} />)}
+      </datalist>
+
       {totalIncomplete > 0 && (
         <div className="bg-amber-50 border border-amber-200 rounded-[1.5rem] p-6 flex items-start gap-5 animate-in slide-in-from-top-4 duration-500 shadow-sm">
           <div className="w-12 h-12 bg-amber-500 text-white rounded-2xl flex items-center justify-center shrink-0 shadow-lg shadow-amber-500/20">

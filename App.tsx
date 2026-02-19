@@ -390,18 +390,45 @@ const App: React.FC = () => {
     reader.readAsText(file);
   };
 
-  const handleExportProject = (projectId: string, e?: React.MouseEvent) => {
+  const handleExportProject = async (projectId: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     const projectToExport = projects.find(p => p.id === projectId);
     if (!projectToExport) return;
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(projectToExport, null, 2));
-    const downloadAnchorNode = document.createElement('a');
-    downloadAnchorNode.setAttribute("href", dataStr);
-    downloadAnchorNode.setAttribute("download", `PROYECTO_${projectToExport.name.replace(/\s+/g, '_')}_${projectToExport.code}.json`);
-    document.body.appendChild(downloadAnchorNode);
-    downloadAnchorNode.click();
-    downloadAnchorNode.remove();
-    setNotification('Archivo descargado correctamente.');
+    
+    const fileName = `PROYECTO_${projectToExport.name.replace(/\s+/g, '_')}_${projectToExport.code}.json`;
+    const jsonString = JSON.stringify(projectToExport, null, 2);
+
+    // @ts-ignore
+    if (typeof window.showSaveFilePicker === 'function') {
+      try {
+        // @ts-ignore
+        const handle = await window.showSaveFilePicker({
+          suggestedName: fileName,
+          types: [{
+            description: 'JSON File',
+            accept: { 'application/json': ['.json'] },
+          }],
+        });
+        const writable = await handle.createWritable();
+        await writable.write(jsonString);
+        await writable.close();
+        setNotification('Archivo guardado correctamente.');
+      } catch (err: any) {
+        if (err.name !== 'AbortError') {
+          console.error(err);
+          setNotification('Error al guardar el archivo.');
+        }
+      }
+    } else {
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(jsonString);
+      const downloadAnchorNode = document.createElement('a');
+      downloadAnchorNode.setAttribute("href", dataStr);
+      downloadAnchorNode.setAttribute("download", fileName);
+      document.body.appendChild(downloadAnchorNode);
+      downloadAnchorNode.click();
+      downloadAnchorNode.remove();
+      setNotification('Archivo descargado correctamente.');
+    }
     setShowSaveModal(false);
   };
 
@@ -430,13 +457,14 @@ const App: React.FC = () => {
         const multiplier = numericIds.length || 1;
 
         node.pieces.forEach(p => {
+          const normalizedName = p.name ? p.name.trim().toUpperCase() : '';
           const materialKey = p.material.toUpperCase();
           if (!materialData.has(materialKey)) {
             materialData.set(materialKey, { pieceMap: new Map(), materialWeight: 0 });
           }
 
           const mGroup = materialData.get(materialKey)!;
-          const key = `${p.name}-${p.diameter}-${p.union || 'S/U'}`.toUpperCase();
+          const key = `${normalizedName}-${p.diameter}-${p.union || 'S/U'}`.toUpperCase();
           const existing = mGroup.pieceMap.get(key);
 
           const qty = p.quantity * multiplier;
@@ -449,7 +477,7 @@ const App: React.FC = () => {
             existing.quantity += qty;
             existing.totalWeight += addedWeight;
           } else {
-            const lowerName = p.name.toLowerCase();
+            const lowerName = normalizedName.toLowerCase();
             let unit = "Un";
             if (lowerName.includes('tubo') || lowerName.includes('cañería')) unit = "m";
             else if (lowerName.includes('hormigón')) unit = "m3";
@@ -459,7 +487,7 @@ const App: React.FC = () => {
             if (priceKey) suggestedPrice = SUGGESTED_PRICES[priceKey];
 
             mGroup.pieceMap.set(key, {
-              name: `${p.name} ${p.diameter} ${p.union || ''}`.trim(),
+              name: `${normalizedName} ${p.diameter} ${p.union || ''}`.trim(),
               unit: unit,
               quantity: qty,
               price: suggestedPrice,
@@ -520,11 +548,12 @@ const App: React.FC = () => {
     const pieceDetailsMap = new Map<string, { name: string, material: string, diameter: string, union: string, weight: number }>();
     expandedNodes.forEach(node => {
       node.pieces.forEach(p => {
-        const key = `${p.material}|${p.name}|${p.union || 'S/U'}|${p.diameter}`;
+        const normalizedName = p.name ? p.name.trim().toUpperCase() : '';
+        const key = `${p.material}|${normalizedName}|${p.union || 'S/U'}|${p.diameter}`;
         if (!pieceDetailsMap.has(key)) {
-          const estimatedW = p.weight || getEstimatedWeight(p.name, p.diameter, p.material);
+          const estimatedW = p.weight || getEstimatedWeight(normalizedName, p.diameter, p.material);
           pieceDetailsMap.set(key, {
-            name: p.name,
+            name: normalizedName,
             material: p.material,
             diameter: p.diameter,
             union: p.union || 'S/U',
@@ -568,7 +597,10 @@ const App: React.FC = () => {
       csvContent += `${node.id};${node.nodeName};`;
       let rowSum = 0;
       uniquePieceKeys.forEach(k => {
-        const found = node.pieces.find(p => `${p.material}|${p.name}|${p.union || 'S/U'}|${p.diameter}` === k);
+        const found = node.pieces.find(p => {
+          const pName = p.name ? p.name.trim().toUpperCase() : '';
+          return `${p.material}|${pName}|${p.union || 'S/U'}|${p.diameter}` === k;
+        });
         const qty = found ? found.quantity : 0;
         csvContent += `${qty || ''};`;
         rowSum += qty;
