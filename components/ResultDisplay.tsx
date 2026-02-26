@@ -50,12 +50,21 @@ const PieceRow: React.FC<PieceRowProps> = ({ piece, onUpdate, onRemove, catalogI
   };
 
   const attemptCatalogMatch = () => {
-    if (!piece.name || !piece.diameter || !piece.material) return;
+    if (!catalogItems || catalogItems.length === 0) {
+      alert("⚠️ Tu catálogo está vacío. Por favor abre el Catálogo de Piezas y vuelve a Importar tu archivo CSV.");
+      return;
+    }
+
+    if (!piece.name || !piece.diameter || !piece.material) {
+      alert("Para buscar en el catálogo, la pieza debe tener Nombre, Material y Diámetro.");
+      return;
+    }
+
     const matchWeight = findWeightInCatalog(piece.name, piece.diameter, piece.material, catalogItems);
     if (matchWeight !== null) {
       onUpdate({ weight: matchWeight });
     } else {
-      alert("No se encontró coincidencia exacta en el catálogo para esta pieza.");
+      alert(`No se encontró el peso para:\n"${piece.name} ${piece.material} ${piece.diameter}"\n\nAsegúrate de que exista una pieza similar en tu Catálogo (actualmente tiene ${catalogItems.length} ítems).`);
     }
   };
 
