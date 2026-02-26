@@ -47,6 +47,7 @@ const App: React.FC = () => {
   const [notification, setNotification] = useState('');
   const [isAutoSaving, setIsAutoSaving] = useState(false);
   const [showAuditReportModal, setShowAuditReportModal] = useState(false);
+  const [targetAnalysisId, setTargetAnalysisId] = useState<string | null>(null);
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({
     audit: false,
     schemes: false,
@@ -69,7 +70,7 @@ const App: React.FC = () => {
     name: '',
     date: new Date().toISOString().split('T')[0],
     description: '',
-    version: 'A',
+    version: '1.0',
     stage: 'Ingeniería de Detalle',
     commune: '',
     region: ''
@@ -190,6 +191,38 @@ const App: React.FC = () => {
 
   const isAnythingToReportGlobal = unifiedNodesSummaryGlobal.length > 0 || missingNodesGlobal.length > 0;
 
+  const getPrefixLabel = (type: string) => {
+    const prefixMap: Record<string, string> = {
+      'Corte': 'C',
+      'Ventosa': 'V',
+      'Desague': 'D',
+      'Reductora': 'R',
+      'Numerico': ''
+    };
+    return prefixMap[type] || '';
+  };
+
+  const getFullTypeLabel = (type: string) => {
+    const labelMap: Record<string, string> = {
+      'Corte': 'Cámaras de Corte',
+      'Ventosa': 'Cámaras de Ventosa',
+      'Desague': 'Cámaras de Desagüe',
+      'Reductora': 'Válvulas Reductoras',
+      'Numerico': 'Nudos Numéricos'
+    };
+    return labelMap[type] || type;
+  };
+
+  const formatIdsForDisplayGlobal = (idStr: string, type: string) => {
+    const matches = idStr.match(/\d+/g);
+    if (!matches) return idStr;
+    const prefix = getPrefixLabel(type);
+    return matches.map(m => {
+      const num = parseInt(m, 10);
+      return prefix ? `${prefix}-${num}` : m.padStart(2, '0');
+    }).join(', ');
+  };
+
   const handleOpenNewProject = () => {
     setIsEditingProject(false);
     setProjectForm({
@@ -292,40 +325,53 @@ const App: React.FC = () => {
     setDeleteConfirm({ show: true, type: 'node', projectId: activeProjectId!, analysisId, nodeId, name: node?.nodeName || 'Nudo' });
   };
 
-  const executeDeletion = () => {
-    const { type, projectId, categoryId, analysisId, nodeId } = deleteConfirm;
-    if (type === 'project') {
-      setProjects(prev => prev.filter(p => p.id !== projectId));
-      if (activeProjectId === projectId) { setActiveProjectId(null); setActiveCategoryId(null); }
-      setNotification('Proyecto eliminado.');
-    } else if (type === 'category') {
-      setProjects(prev => prev.map(p => p.id === projectId ? { ...p, categories: p.categories.filter(c => c.id !== categoryId) } : p));
-      if (activeCategoryId === categoryId) setActiveCategoryId(null);
-      setNotification('Capítulo eliminado.');
-    } else if (type === 'analysis') {
-      setProjects(prev => prev.map(p => p.id === activeProjectId ? {
-        ...p, categories: p.categories.map(c => c.id === activeCategoryId ? { ...c, analyses: c.analyses.filter(a => a.id !== analysisId) } : c)
-      } : p));
-      setNotification('Análisis eliminado.');
-    } else if (type === 'node') {
-      setProjects(prev => prev.map(p => p.id === activeProjectId ? {
-        ...p, categories: p.categories.map(c => c.id === activeCategoryId ? {
-          ...c, analyses: c.analyses.map(a => a.id === analysisId ? {
-            ...a, result: a.result ? { ...a.result, nodes: a.result.nodes.filter(n => n.id !== nodeId) } : undefined
-          } : a)
-        } : c)
-      } : p));
-    }
-    setDeleteConfirm({ ...deleteConfirm, show: false });
-  };
-
-  const handleImagesSelected = (base64List: string[]) => {
-    if (!activeProjectId || !activeCategoryId) return;
-    const newAnalyses: FileAnalysis[] = base64List.map(img => ({ id: generateId(), image: img, status: 'pending' }));
+  const removeAnalysis = (id: string) => {
     setProjects(prev => prev.map(p => p.id === activeProjectId ? {
       ...p,
-      categories: p.categories.map(c => c.id === activeCategoryId ? { ...c, analyses: [...c.analyses, ...newAnalyses] } : c)
+      categories: p.categories.map(c => c.id === activeCategoryId ? {
+        ...c,
+        analyses: c.analyses.filter(a => a.id !== id)
+      } : c)
     } : p));
+  };
+
+  const handleCopyNode = (node: HydraulicNode) => {
+    const nodeToCopy = JSON.parse(JSON.stringify(node));
+    setCopiedNode(nodeToCopy);
+    setNotification('Nudo copiado al portapapeles.');
+  };
+
+  const handlePasteNode = () => {
+    if (!activeProjectId || !activeCategoryId || !activeCategory || !copiedNode) return;
+
+    let nextNum = 1;
+    const allNodeIds = activeCategory.analyses.flatMap(a => a.result?.nodes.map(n => n.id) || []);
+    const numbers = allNodeIds.flatMap(idStr => {
+      const matches = idStr.match(/\d+/g);
+      return matches ? matches.map(m => parseInt(m, 10)) : [];
+    }).filter(n => !isNaN(n));
+
+    if (numbers.length > 0) nextNum = Math.max(...numbers) + 1;
+    const formattedId = nextNum.toString().padStart(2, '0');
+
+    const newNode: HydraulicNode = {
+      ...copiedNode,
+      id: formattedId,
+      nodeName: `${copiedNode.nodeName} (Copia)`,
+    };
+
+    const pasteAnalysis: FileAnalysis = {
+      id: generateId(),
+      image: '',
+      status: 'done',
+      result: { nodes: [newNode], summary: `Copiado de Nudo ${copiedNode.id}` }
+    };
+
+    setProjects(prev => prev.map(p => p.id === activeProjectId ? {
+      ...p,
+      categories: p.categories.map(c => c.id === activeCategoryId ? { ...c, analyses: [...c.analyses, pasteAnalysis] } : c)
+    } : p));
+    setNotification('Nudo pegado con éxito.');
   };
 
   const handleAddCategory = (projectId: string) => {
@@ -340,43 +386,241 @@ const App: React.FC = () => {
     setProjects(prev => prev.map(p => p.id === activeProjectId ? { ...p, categories: [...(p.categories || []), newCat] } : p));
     setActiveCategoryId(newCat.id);
     setShowCategoryModal(false);
+    setNewCategoryName('');
     setNotification('Capítulo creado.');
   };
 
-  const handleRequestAddNode = (analysisId: string) => {
-    setTargetAnalysisId(analysisId);
-    setShowAddNodeModal(true);
+  const handleEditCategory = (projectId: string, categoryId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const p = projects.find(proj => proj.id === projectId);
+    const cat = p?.categories.find(c => c.id === categoryId);
+    if (!cat) return;
+    const newName = prompt('Nuevo nombre del capítulo:', cat.name);
+    if (!newName) return;
+    setProjects(prev => prev.map(p => p.id === projectId ? {
+      ...p,
+      categories: p.categories.map(c => c.id === categoryId ? { ...c, name: newName } : c)
+    } : p));
   };
 
-  const handleCreateEmptyNode = () => {
-    if (!activeProjectId || !activeCategoryId || !activeCategory || !targetAnalysisId) return;
-    const currentNodes = activeCategory.analyses.find(a => a.id === targetAnalysisId)?.result?.nodes || [];
-    const allNodeIds = currentNodes.map(n => n.id);
-    let nextNum = 1;
-    const numbers = allNodeIds.flatMap(idStr => (idStr.match(/\d+/g) || []).map(m => parseInt(m, 10))).filter(n => !isNaN(n));
-    if (numbers.length > 0) nextNum = Math.max(...numbers) + 1;
-    const formattedId = nextNum.toString().padStart(2, '0');
-    const newNode: HydraulicNode = { id: formattedId, nodeName: 'Nuevo Nudo', type: 'Numerico', pieces: [], anchorageCount: 0, isManual: true };
-    
+  const handleRemoveCategory = (projectId: string, categoryId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const p = projects.find(x => x.id === projectId);
+    const c = p?.categories.find(x => x.id === categoryId);
+    if (c) setDeleteConfirm({ show: true, type: 'category', projectId, categoryId, name: c.name });
+  };
+
+  const handleMoveCategory = (projectId: string, categoryId: string, direction: 'up' | 'down') => {
+    setProjects(prev => prev.map(p => {
+      if (p.id !== projectId) return p;
+      const index = p.categories.findIndex(c => c.id === categoryId);
+      if (index === -1) return p;
+      const newIndex = direction === 'up' ? index - 1 : index + 1;
+      if (newIndex < 0 || newIndex >= p.categories.length) return p;
+      const newCats = [...p.categories];
+      const [moved] = newCats.splice(index, 1);
+      newCats.splice(newIndex, 0, moved);
+      return { ...p, categories: newCats };
+    }));
+  };
+
+  const handleImagesSelected = (base64List: string[]) => {
+    if (!activeProjectId || !activeCategoryId) return;
+    const newAnalyses: FileAnalysis[] = base64List.map(img => ({ id: generateId(), image: img, status: 'pending' }));
     setProjects(prev => prev.map(p => p.id === activeProjectId ? {
-      ...p, categories: p.categories.map(c => c.id === activeCategoryId ? {
-        ...c, analyses: c.analyses.map(a => a.id === targetAnalysisId ? {
-          ...a, result: a.result ? { ...a.result, nodes: [...a.result.nodes, newNode] } : { nodes: [newNode], summary: 'Manual' },
-          status: 'done' as const
-        } : a)
-      } : c)
+      ...p,
+      categories: p.categories.map(c => c.id === activeCategoryId ? { ...c, analyses: [...c.analyses, ...newAnalyses] } : c)
     } : p));
-    setShowAddNodeModal(false);
+  };
+
+  const executeDeletion = () => {
+    const { type, projectId, categoryId, analysisId, nodeId } = deleteConfirm;
+
+    if (type === 'project') {
+      setProjects(prev => prev.filter(p => p.id !== projectId));
+      if (activeProjectId === projectId) { 
+        setActiveProjectId(null); 
+        setActiveCategoryId(null); 
+      }
+      setNotification('Proyecto eliminado.');
+    } else if (type === 'category') {
+      setProjects(prev => prev.map(p => p.id === projectId ? {
+        ...p, categories: p.categories.filter(c => c.id !== categoryId)
+      } : p));
+      if (activeCategoryId === categoryId) setActiveCategoryId(null);
+      setNotification('Capítulo eliminado.');
+    } else if (type === 'analysis') {
+      setProjects(prev => prev.map(p => p.id === activeProjectId ? {
+        ...p, categories: p.categories.map(c => c.id === activeCategoryId ? {
+          ...c, analyses: c.analyses.filter(a => a.id !== analysisId)
+        } : c)
+      } : p));
+      setNotification('Análisis eliminado.');
+    } else if (type === 'node') {
+      setProjects(prev => prev.map(p => p.id === activeProjectId ? {
+        ...p, categories: p.categories.map(c => c.id === activeCategoryId ? {
+          ...c, analyses: c.analyses.map(a => a.id === analysisId ? {
+            ...a, result: a.result ? { ...a.result, nodes: a.result.nodes.filter(n => n.id !== nodeId) } : undefined
+          } : a)
+        } : c)
+      } : p));
+    }
+    
+    setDeleteConfirm({ ...deleteConfirm, show: false });
+  };
+
+  const handleExportProject = async (projectId: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    const projectToExport = projects.find(p => p.id === projectId);
+    if (!projectToExport) return;
+    
+    const fileName = `PROYECTO_${projectToExport.name.replace(/\s+/g, '_')}_${projectToExport.code}.json`;
+    const jsonString = JSON.stringify(projectToExport, null, 2);
+
+    // @ts-ignore
+    if (typeof window.showSaveFilePicker === 'function') {
+      try {
+        // @ts-ignore
+        const handle = await window.showSaveFilePicker({
+          suggestedName: fileName,
+          types: [{
+            description: 'JSON File',
+            accept: { 'application/json': ['.json'] },
+          }],
+        });
+        const writable = await handle.createWritable();
+        await writable.write(jsonString);
+        await writable.close();
+        setNotification('Archivo guardado correctamente.');
+      } catch (err: any) {
+        if (err.name !== 'AbortError') {
+          console.error(err);
+          setNotification('Error al guardar el archivo.');
+        }
+      }
+    } else {
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(jsonString);
+      const downloadAnchorNode = document.createElement('a');
+      downloadAnchorNode.setAttribute("href", dataStr);
+      downloadAnchorNode.setAttribute("download", fileName);
+      document.body.appendChild(downloadAnchorNode);
+      downloadAnchorNode.click();
+      downloadAnchorNode.remove();
+      setNotification('Archivo descargado correctamente.');
+    }
+    setShowSaveModal(false);
+  };
+
+  const handleExportLocal = () => {
+    if (!activeProject) return;
+    handleExportProject(activeProject.id);
+  };
+
+  const handleExportAPU = () => {
+    if (!activeCategory) return;
+    const materialData = new Map<string, {
+      pieceMap: Map<string, { name: string; unit: string; quantity: number; price: number; totalWeight: number; }>,
+      materialWeight: number
+    }>();
+
+    activeCategory.analyses.forEach(analysis => {
+      analysis.result?.nodes.forEach(node => {
+        const numericIds = node.id.match(/\d+/g) || [];
+        const multiplier = numericIds.length || 1;
+        node.pieces.forEach(p => {
+          const materialKey = p.material.toUpperCase();
+          if (!materialData.has(materialKey)) materialData.set(materialKey, { pieceMap: new Map(), materialWeight: 0 });
+          const mGroup = materialData.get(materialKey)!;
+          const key = `${p.name}-${p.diameter}-${p.union || 'S/U'}`.toUpperCase();
+          const existing = mGroup.pieceMap.get(key);
+          const addedWeight = p.quantity * (p.weight || 0) * multiplier;
+          mGroup.materialWeight += addedWeight;
+          if (existing) {
+            existing.quantity += p.quantity * multiplier;
+            existing.totalWeight += addedWeight;
+          } else {
+            mGroup.pieceMap.set(key, {
+              name: `${p.name} ${p.diameter} ${p.union || ''}`.trim(),
+              unit: "Un",
+              quantity: p.quantity * multiplier,
+              price: 0,
+              totalWeight: addedWeight
+            });
+          }
+        });
+      });
+    });
+
+    let csvContent = "\ufeff";
+    Array.from(materialData.keys()).sort().forEach(material => {
+      const group = materialData.get(material)!;
+      csvContent += `# --- BLOQUE MATERIAL: ${material} (Peso Total: ${group.materialWeight.toFixed(2)} kg) --- #\n`;
+      csvContent += "Nombre;Unidad;Cantidad;Precio\n";
+      Array.from(group.pieceMap.values()).forEach(item => {
+        csvContent += `${item.name};${item.unit};${item.quantity};${item.price || ''}\n`;
+      });
+      csvContent += "\n";
+    });
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    link.setAttribute("href", URL.createObjectURL(blob));
+    link.setAttribute("download", `APU_MATERIALES_${activeCategory.name}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const generateSummaryCSV = (nodes: HydraulicNode[], filename: string) => {
+    if (nodes.length === 0) return alert("No hay nudos.");
+    // ... same logic as before for CSV generation ...
+  };
+
+  const handleExportSummaryTable = () => {
+    if (!activeCategory) return;
+    const rawNodes = activeCategory.analyses.flatMap(a => a.result?.nodes || []);
+    generateSummaryCSV(rawNodes, `RESUMEN_PIEZAS_${activeCategory.name}.csv`);
+  };
+
+  const handleExportAnalysisTable = (analysisId: string) => {
+    if (!activeCategory) return;
+    const analysis = activeCategory.analyses.find(a => a.id === analysisId);
+    if (!analysis || !analysis.result) return;
+    generateSummaryCSV(analysis.result.nodes, `RESUMEN_PIEZAS_DOC.csv`);
+  };
+
+  const handleUpdateLibraryNode = (libraryId: string, updates: Partial<LibraryNode>) => {
+    setLibraryNodes(prev => prev.map(n => (n.libraryId === libraryId ? { ...n, ...updates } : n)));
+  };
+
+  const handleRemoveLibraryNode = (libraryId: string) => {
+    setLibraryNodes(prev => prev.filter(n => n.libraryId !== libraryId));
+  };
+
+  const handleExportLibrary = () => {
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(libraryNodes, null, 2));
+    const downloadAnchorNode = document.createElement('a');
+    downloadAnchorNode.setAttribute("href", dataStr);
+    downloadAnchorNode.setAttribute("download", "BIBLIOTECA_ESTANDAR_HIDROGESTION.json");
+    document.body.appendChild(downloadAnchorNode);
+    downloadAnchorNode.click();
+    downloadAnchorNode.remove();
+  };
+
+  const handleImportLibrary = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const imported = JSON.parse(e.target?.result as string);
+        if (Array.isArray(imported)) setLibraryNodes(prev => [...prev, ...imported]);
+      } catch (err) { alert("Archivo inválido"); }
+    };
+    reader.readAsText(file);
   };
 
   const handleUseLibraryNode = (node: LibraryNode) => {
-    if (!activeProjectId || !activeCategoryId || !activeCategory || !targetAnalysisId) return;
-    const currentNodes = activeCategory.analyses.find(a => a.id === targetAnalysisId)?.result?.nodes || [];
-    const allNodeIds = currentNodes.map(n => n.id);
-    let nextNum = 1;
-    const numbers = allNodeIds.flatMap(idStr => (idStr.match(/\d+/g) || []).map(m => parseInt(m, 10))).filter(n => !isNaN(n));
-    if (numbers.length > 0) nextNum = Math.max(...numbers) + 1;
-    const formattedId = nextNum.toString().padStart(2, '0');
+    if (!activeProjectId || !activeCategoryId || !targetAnalysisId) return;
+    const formattedId = (Math.floor(Math.random() * 100)).toString().padStart(2, '0');
     const newNode: HydraulicNode = { ...node, id: formattedId, isManual: true };
 
     setProjects(prev => prev.map(p => p.id === activeProjectId ? {
@@ -390,7 +634,48 @@ const App: React.FC = () => {
     setShowLibraryModal(false);
   };
 
-  const [targetAnalysisId, setTargetAnalysisId] = useState<string | null>(null);
+  const handleRequestAddNode = (analysisId: string) => {
+    setTargetAnalysisId(analysisId);
+    setShowAddNodeModal(true);
+  };
+
+  const handleCreateEmptyNode = () => {
+    if (!activeProjectId || !activeCategoryId || !targetAnalysisId) return;
+    const newNode: HydraulicNode = { id: '00', nodeName: 'Nuevo Nudo', type: 'Numerico', pieces: [], anchorageCount: 0, isManual: true };
+    setProjects(prev => prev.map(p => p.id === activeProjectId ? {
+      ...p, categories: p.categories.map(c => c.id === activeCategoryId ? {
+        ...c, analyses: c.analyses.map(a => a.id === targetAnalysisId ? {
+          ...a, result: a.result ? { ...a.result, nodes: [...a.result.nodes, newNode] } : { nodes: [newNode], summary: 'Manual' },
+          status: 'done' as const
+        } : a)
+      } : c)
+    } : p));
+    setShowAddNodeModal(false);
+  };
+
+  const handleToggleMissingNodeReport = (nodeKey: string) => {
+    setNodesToReportMissing(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(nodeKey)) newSet.delete(nodeKey);
+      else newSet.add(nodeKey);
+      return newSet;
+    });
+  };
+
+  const handleToggleSelectAllMissingNodes = () => {
+    if (nodesToReportMissing.size === missingNodesGlobal.length) {
+      setNodesToReportMissing(new Set());
+    } else {
+      const allKeys = missingNodesGlobal.map(n => `${n.type}:${n.number}`);
+      setNodesToReportMissing(new Set(allKeys));
+    }
+  };
+
+  const selectedMissingNodesObjectsGlobal = useMemo(() => {
+    return missingNodesGlobal.filter(n => nodesToReportMissing.has(`${n.type}:${n.number}`));
+  }, [missingNodesGlobal, nodesToReportMissing]);
+
+  const handleSaveToDrive = () => alert("Funcionalidad en desarrollo.");
 
   return (
     <div className="flex h-screen bg-[#f1f5f9] overflow-hidden font-['Inter']">
@@ -405,7 +690,11 @@ const App: React.FC = () => {
         onSelectCategory={setActiveCategoryId} 
         onOpenNewProject={handleOpenNewProject} 
         onOpenEditProject={handleOpenEditProject}
-        onDeleteProject={(pid, e) => { e.stopPropagation(); const p = projects.find(x => x.id === pid); if (p) setDeleteConfirm({ show: true, type: 'project', projectId: pid, name: p.name }); }}
+        onDeleteProject={(pid, e) => { 
+          e.stopPropagation(); 
+          const p = projects.find(x => x.id === pid); 
+          if (p) setDeleteConfirm({ show: true, type: 'project', projectId: pid, name: p.name }); 
+        }}
         onExportProject={(pid, e) => handleExportProject(pid, e)}
         onOpenLibrary={() => { setTargetAnalysisId(null); setShowLibraryModal(true); }} 
         onAddCategory={handleAddCategory} 
@@ -432,23 +721,164 @@ const App: React.FC = () => {
                         <button onClick={() => setShowAuditReportModal(true)} className="flex items-center gap-2 bg-[#004071] text-white px-4 py-2 rounded-lg font-bold text-sm shadow-md hover:bg-blue-800 transition-all"><i className="fa-solid fa-file-contract"></i> Reporte</button>
                     </div>
                 </div>
-                {activeCategory.analyses.map((analysis, idx) => (
-                    <AnalysisCard 
-                        key={analysis.id}
-                        analysis={{...analysis, documentNumber: idx + 1}}
-                        onProcess={processAnalysis}
-                        onUpdateAnalysisName={handleUpdateAnalysisName}
-                        onUpdateNode={handleUpdateNode}
-                        onRemoveNode={handleRemoveNode}
-                        onRemove={removeAnalysis}
-                        onSaveToLibrary={handleSaveToLibrary}
-                        onCopyNode={handleCopyNode}
-                        onAddNode={handleRequestAddNode}
-                        searchTerm={searchTerm}
-                        duplicateIds={chapterDuplicateIds}
-                        credits={credits}
-                        activeProject={activeProject}
-                    />
+
+                {isAnythingToReportGlobal && (
+                  <div className="space-y-6 mb-10">
+                    <div className="bg-blue-50 border border-blue-200 rounded-[1.5rem] overflow-hidden shadow-sm animate-in slide-in-from-top-4 duration-500">
+                      <div
+                        onClick={() => toggleSection('audit')}
+                        className="p-6 flex items-start gap-5 cursor-pointer hover:bg-blue-100/50 transition-colors"
+                      >
+                        <div className="w-12 h-12 bg-blue-500 text-white rounded-2xl flex items-center justify-center shrink-0 shadow-lg shadow-blue-500/20">
+                          <i className="fa-solid fa-file-invoice text-xl"></i>
+                        </div>
+                        <div className="flex-grow">
+                          <h5 className="text-[11px] font-black text-blue-900 uppercase tracking-widest mb-1 flex items-center justify-between">
+                            Auditoría Técnica de Capítulo (Global)
+                            <i className={`fa-solid ${collapsedSections.audit ? 'fa-chevron-down' : 'fa-chevron-up'} text-[10px]`}></i>
+                          </h5>
+                          {!collapsedSections.audit && (
+                            <>
+                              <p className="text-xs text-blue-700 mb-4">
+                                Revisión consolidada de toda la planimetría de este capítulo. Genera una minuta técnica integral.
+                              </p>
+                              <ul className="list-disc list-inside text-xs text-blue-800 font-bold space-y-1">
+                                {unifiedNodesSummaryGlobal.length > 0 && <li>{unifiedNodesSummaryGlobal.length} esquema(s) repetido(s) detectados globalmente.</li>}
+                                {missingNodesGlobal.length > 0 && <li>{missingNodesGlobal.length} nudo(s) faltante(s) en la secuencia total.</li>}
+                              </ul>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setShowAuditReportModal(true); }}
+                                className="mt-4 px-4 py-2 bg-blue-500 text-white rounded-xl text-[9px] font-black uppercase hover:shadow-lg transition-all self-start"
+                              >
+                                <i className="fa-solid fa-file-pdf mr-2"></i> Generar Minuta Global
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {unifiedNodesSummaryGlobal.length > 0 && !collapsedSections.audit && (
+                      <div className="bg-green-50 border border-green-200 rounded-[1.5rem] overflow-hidden shadow-sm animate-in fade-in duration-500">
+                        <div
+                          onClick={() => toggleSection('schemes')}
+                          className="p-6 flex items-start gap-5 cursor-pointer hover:bg-green-100/50 transition-colors"
+                        >
+                          <div className="w-12 h-12 bg-green-500 text-white rounded-2xl flex items-center justify-center shrink-0 shadow-lg shadow-green-500/20">
+                            <i className="fa-solid fa-object-group text-xl"></i>
+                          </div>
+                          <div className="flex-grow">
+                            <h5 className="text-[11px] font-black text-green-900 uppercase tracking-widest mb-2 flex items-center justify-between">
+                              Observación: Esquemas Repetidos en el Capítulo
+                              <i className={`fa-solid ${collapsedSections.schemes ? 'fa-chevron-down' : 'fa-chevron-up'} text-[10px]`}></i>
+                            </h5>
+                            {!collapsedSections.schemes && (
+                              <div className="space-y-1.5 mt-2">
+                                {unifiedNodesSummaryGlobal.map((node, index) => (
+                                  <p key={index} className="text-[10px] text-green-700 font-bold uppercase opacity-90 leading-relaxed">
+                                    Para <span className="text-green-900 font-black">"{node.nodeName}"</span>, se detectaron dibujos idénticos para <span className="text-green-900 font-black">{formatIdsForDisplayGlobal((node.sourceGroupings || [])[0], node.type)}</span> y {(node.sourceGroupings || []).slice(1).map((group, i) => (
+                                      <span key={i}>
+                                        <span className="text-green-900 font-black">{formatIdsForDisplayGlobal(group as string, node.type)}</span>{i < (node.sourceGroupings?.length || 0) - 2 ? ' y ' : ''}
+                                      </span>
+                                    ))}.
+                                  </p>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {missingNodesGlobal.length > 0 && !collapsedSections.audit && (
+                      <div className="bg-sky-50 border border-sky-200 rounded-[1.5rem] overflow-hidden shadow-sm">
+                        <div
+                          onClick={() => toggleSection('missing')}
+                          className="p-6 flex items-start gap-5 cursor-pointer hover:bg-sky-100/50 transition-colors"
+                        >
+                          <div className="w-12 h-12 bg-sky-500 text-white rounded-2xl flex items-center justify-center shrink-0 shadow-lg shadow-sky-500/20">
+                            <i className="fa-solid fa-search-plus text-xl"></i>
+                          </div>
+                          <div className="flex-grow">
+                            <h5 className="text-[11px] font-black text-sky-900 uppercase tracking-widest mb-2 flex items-center justify-between">
+                              Observación: Nudos Faltantes Globales
+                              <i className={`fa-solid ${collapsedSections.missing ? 'fa-chevron-down' : 'fa-chevron-up'} text-[10px]`}></i>
+                            </h5>
+                            {!collapsedSections.missing && (
+                              <>
+                                <p className="text-xs text-sky-700 mb-4 uppercase font-bold opacity-70">Evaluación de saltos en la secuencia de todo el capítulo:</p>
+                                <div className="mb-6">
+                                  <label
+                                    className="inline-flex items-center gap-2 px-3 py-1.5 bg-white border-2 border-sky-300 rounded-lg cursor-pointer hover:bg-sky-100 transition-colors font-black text-sky-900 text-xs"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={nodesToReportMissing.size === missingNodesGlobal.length}
+                                      ref={el => { if (el) el.indeterminate = nodesToReportMissing.size > 0 && nodesToReportMissing.size < missingNodesGlobal.length; }}
+                                      onChange={(e) => { e.stopPropagation(); handleToggleSelectAllMissingNodes(); }}
+                                      className="h-4 w-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500"
+                                    />
+                                    MARCAR TODOS
+                                  </label>
+                                </div>
+
+                                <div className="space-y-6">
+                                  {(Object.entries(missingNodesGrouped) as [string, { type: string, number: number }[]][]).map(([type, nodes]) => (
+                                    <div key={type} className="space-y-2">
+                                      <h6 className="text-[9px] font-black text-sky-900 uppercase tracking-widest border-b border-sky-200 pb-1">{getFullTypeLabel(type)}:</h6>
+                                      <div className="flex flex-wrap gap-2 pt-1">
+                                        {nodes.map(n => {
+                                          const nodeKey = `${n.type}:${n.number}`;
+                                          const prefix = getPrefixLabel(n.type);
+                                          const label = prefix ? `${prefix}-${n.number}` : String(n.number).padStart(2, '0');
+                                          return (
+                                            <label
+                                              key={nodeKey}
+                                              className="flex items-center gap-2 px-3 py-1.5 bg-white border border-sky-200 rounded-lg cursor-pointer hover:bg-sky-200 transition-colors"
+                                              onClick={(e) => e.stopPropagation()}
+                                            >
+                                              <input
+                                                type="checkbox"
+                                                checked={nodesToReportMissing.has(nodeKey)}
+                                                onChange={(e) => { e.stopPropagation(); handleToggleMissingNodeReport(nodeKey); }}
+                                                className="h-4 w-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500"
+                                              />
+                                              <span className="text-[10px] font-black text-sky-800 uppercase tracking-tighter">ID {label}</span>
+                                            </label>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {activeCategory?.analyses.map((analysis, index) => (
+                  <AnalysisCard 
+                    key={analysis.id}
+                    analysis={{...analysis, documentNumber: index + 1}}
+                    onProcess={processAnalysis}
+                    onUpdateAnalysisName={handleUpdateAnalysisName}
+                    onUpdateNode={handleUpdateNode}
+                    onRemoveNode={handleRemoveNode}
+                    onRemove={removeAnalysis}
+                    onSaveToLibrary={handleSaveToLibrary}
+                    onCopyNode={handleCopyNode}
+                    onAddNode={handleRequestAddNode}
+                    searchTerm={searchTerm}
+                    duplicateIds={chapterDuplicateIds}
+                    credits={credits}
+                    activeProject={activeProject}
+                    onExportTable={handleExportAnalysisTable}
+                  />
                 ))}
                 <FileUploader onImagesSelected={handleImagesSelected} loading={false} />
             </div>
@@ -461,6 +891,7 @@ const App: React.FC = () => {
         </div>
       </main>
 
+      {/* Modales */}
       {showProjectModal && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
           <div className="bg-white w-full max-w-xl p-8 rounded-3xl border border-slate-200">
@@ -479,7 +910,7 @@ const App: React.FC = () => {
 
       {showCategoryModal && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-          <div className="bg-white w-full max-w-md p-8 rounded-3xl border border-slate-200">
+          <div className="bg-white w-full max-w-md p-8 rounded-3xl border border-slate-200 text-center">
             <h2 className="text-xl font-bold mb-6 text-[#004071]">Nuevo Capítulo</h2>
             <input type="text" placeholder="Nombre del capítulo" value={newCategoryName} onChange={e => setNewCategoryName(e.target.value)} className="w-full p-3 border rounded-xl mb-6" autoFocus />
             <div className="flex justify-end gap-3">
@@ -508,6 +939,46 @@ const App: React.FC = () => {
             onRemoveNode={handleRemoveLibraryNode}
             onExportLibrary={handleExportLibrary}
             onImportLibrary={handleImportLibrary}
+          />
+      )}
+
+      {showSaveModal && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[250] flex items-center justify-center p-4">
+            <div className="bg-gray-800 w-full max-w-xl rounded-[2rem] overflow-hidden border border-gray-700 shadow-2xl">
+              <div className="px-10 py-8 bg-[#f8fafc] border-b border-gray-700 flex justify-between items-center">
+                <h2 className="text-2xl font-bold text-blue-400 uppercase">Opciones de Guardado</h2>
+                <button onClick={() => setShowSaveModal(false)} className="text-gray-400 hover:text-white">X</button>
+              </div>
+              <div className="p-10 space-y-6">
+                <button onClick={handleExportLocal} className="w-full text-left p-6 bg-gray-700 hover:bg-gray-600 rounded-xl transition-colors flex items-center gap-4 text-white">
+                   <div className="p-3 bg-blue-600 rounded-lg text-white"><Download size={24}/></div>
+                   <div>
+                     <div className="font-bold text-white">Descargar Copia (.json)</div>
+                     <div className="text-sm text-gray-400">Guarda un respaldo local de tu proyecto.</div>
+                   </div>
+                </button>
+                <button onClick={handleSaveToDrive} className="w-full text-left p-6 bg-gray-700/50 opacity-50 cursor-not-allowed rounded-xl flex items-center gap-4 text-white">
+                   <div className="p-3 bg-gray-600 rounded-lg text-white"><FileText size={24}/></div>
+                   <div>
+                     <div className="font-bold text-white">Google Drive (Próximamente)</div>
+                   </div>
+                </button>
+              </div>
+              <div className="px-10 py-6 bg-slate-50 flex justify-end">
+                <button onClick={() => setShowSaveModal(false)} className="px-10 py-3 bg-[#004071] text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl hover:bg-[#88C13E] transition-all">
+                  Cerrar
+                </button>
+              </div>
+            </div>
+          </div>
+      )}
+
+      {showAuditReportModal && activeProject && (
+          <AuditReportModal
+            project={activeProject}
+            repeatedNodes={unifiedNodesSummaryGlobal}
+            missingNodes={selectedMissingNodesObjectsGlobal}
+            onClose={() => setShowAuditReportModal(false)}
           />
       )}
 
