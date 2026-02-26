@@ -122,20 +122,31 @@ export const findWeightInCatalog = (
     const candidates = filteredByDiameter.length > 0 ? filteredByDiameter : filteredByMaterial;
 
     // Let's find the best name match. Simple token overlap technique.
-    const nameTokens = nName.split(/\s+/);
+    // User pieces are often short (e.g. "CODO 90°"), while catalog is long ("Codo 90° Inyectado HDPE 75mm").
+    // We will build a combined search string from the user's piece to increase match probability.
+    const searchString = `${nName} ${nMat} ${pDiam}`.replace(/°/g, '');
+    const searchTokens = searchString.split(/\s+/).filter(t => t.length > 0);
 
     let bestMatch: CatalogItem | null = null;
     let maxScore = -1;
 
     for (const item of candidates) {
-        const iNameTokens = normalizeText(item.name).split(/\s+/);
+        // Normalize catalog item name and remove degree symbols for fairer comparison
+        const iNameTokens = normalizeText(item.name).replace(/°/g, '').split(/\s+/).filter(t => t.length > 0);
         let score = 0;
 
-        // Check token intersection
-        for (const nTok of nameTokens) {
-            if (iNameTokens.includes(nTok)) {
+        // Check token intersection from our combined search string against the catalog item's name
+        for (const sTok of searchTokens) {
+            // we use includes instead of exact match to catch "75MM" matching "75"
+            if (iNameTokens.some(iTok => iTok.includes(sTok) || sTok.includes(iTok))) {
                 score++;
             }
+        }
+
+        // Give a little bonus if the exact name token is found
+        const exactNameTokens = nName.replace(/°/g, '').split(/\s+/).filter(t => t.length > 0);
+        for (const nTok of exactNameTokens) {
+            if (iNameTokens.includes(nTok)) score += 0.5;
         }
 
         if (score > maxScore) {
@@ -144,8 +155,9 @@ export const findWeightInCatalog = (
         }
     }
 
-    // Require at least some overlap in the name to return a valid weight (e.g. at least 1 keyword match like "CODO" or "TEE")
-    if (bestMatch && maxScore > 0) {
+    // Require at least some overlap in the name to return a valid weight 
+    // (a score > 1 implies it matched more than just the material or just the diameter)
+    if (bestMatch && maxScore > 1) {
         return bestMatch.weight;
     }
 
