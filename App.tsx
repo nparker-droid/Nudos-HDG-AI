@@ -1,9 +1,8 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import FileUploader from './components/FileUploader.tsx';
 import ResultDisplay from './components/ResultDisplay.tsx';
 import Sidebar from './components/Sidebar.tsx';
 import { analyzeHydraulicPlan } from './services/geminiService.ts';
-// Fixed: Added AnalysisResult to the imports from types.ts
 import { Project, FileAnalysis, Category, HydraulicNode, Piece, NodeMaterial, LibraryNode, AnalysisResult } from './types.ts';
 import AnalysisCard from './components/AnalysisCard.tsx';
 import AddNodeModal from './components/AddNodeModal.tsx';
@@ -12,7 +11,7 @@ import AuditReportModal from './components/AuditReportModal.tsx';
 
 const INITIAL_CREDITS = 50;
 
-// Utility to strictly sort and format ID strings (e.g. "05, 01" -> "01, 05")
+// Utilidad para ordenar y formatear IDs (ej. "05, 01" -> "01, 05")
 const sortIdString = (val: string): string => {
   return val.split(',')
     .map(s => s.trim())
@@ -27,45 +26,6 @@ const generateId = () => {
     return crypto.randomUUID();
   }
   return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-};
-
-const SUGGESTED_PRICES: Record<string, number> = {
-  'VÁLVULA': 450000,
-  'CODO': 45000,
-  'TEE': 65000,
-  'REDUCCIÓN': 35000,
-  'TUBO': 12000,
-  'UNION': 25000,
-  'COPLA': 22000,
-  'STUB END': 28000,
-  'FLANGE': 42000,
-  'JUNTA': 55000,
-  'PERNOS': 1500,
-  'HORMIGÓN': 145000,
-  'ANCLAJE': 180000
-};
-
-const getEstimatedWeight = (name: string, diameter: string, material: string): number => {
-  const dnMatch = diameter.match(/\d+/);
-  const dn = dnMatch ? parseInt(dnMatch[0]) : 100;
-  const n = name.toLowerCase();
-  const m = material.toLowerCase();
-
-  let baseWeight = 0;
-  if (n.includes('válvula') || n.includes('valvula')) {
-    baseWeight = dn * 0.8;
-  } else if (n.includes('codo') || n.includes('tee') || n.includes('reducción') || n.includes('curva')) {
-    if (m.includes('hdpe')) baseWeight = dn * 0.05;
-    else if (m.includes('acero') || m.includes('fierro') || m.includes('fdo')) baseWeight = dn * 0.35;
-    else baseWeight = dn * 0.2;
-  } else if (n.includes('tubo') || n.includes('cañería')) {
-    baseWeight = (dn * 0.1) * 6;
-  } else if (n.includes('unión') || n.includes('copla') || n.includes('flange')) {
-    baseWeight = dn * 0.15;
-  } else {
-    baseWeight = dn * 0.1;
-  }
-  return parseFloat(baseWeight.toFixed(2));
 };
 
 const App: React.FC = () => {
@@ -94,19 +54,6 @@ const App: React.FC = () => {
   });
   const [nodesToReportMissing, setNodesToReportMissing] = useState(new Set<string>());
 
-  const toggleSection = (section: string) => {
-    setCollapsedSections(prev => ({ ...prev, [section]: !prev[section] }));
-  };
-
-  useEffect(() => {
-    if (notification) {
-      const timer = setTimeout(() => {
-        setNotification('');
-      }, 3000);
-      return () => clearTimeout(timer);
-    }
-  }, [notification]);
-
   const [deleteConfirm, setDeleteConfirm] = useState<{
     show: boolean;
     type: 'project' | 'category' | 'analysis' | 'node';
@@ -122,11 +69,24 @@ const App: React.FC = () => {
     name: '',
     date: new Date().toISOString().split('T')[0],
     description: '',
-    version: '1.0',
+    version: 'A',
     stage: 'Ingeniería de Detalle',
     commune: '',
     region: ''
   });
+
+  const toggleSection = (section: string) => {
+    setCollapsedSections(prev => ({ ...prev, [section]: !prev[section] }));
+  };
+
+  useEffect(() => {
+    if (notification) {
+      const timer = setTimeout(() => {
+        setNotification('');
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [notification]);
 
   useEffect(() => {
     const savedProjects = localStorage.getItem('hidrogestion_v10_projects');
@@ -144,7 +104,6 @@ const App: React.FC = () => {
       localStorage.setItem('hidrogestion_v10_projects', JSON.stringify(projects));
       localStorage.setItem('hidrogestion_v10_library', JSON.stringify(libraryNodes));
       localStorage.setItem('hidrogestion_v10_credits', credits.toString());
-
       const timer = setTimeout(() => setIsAutoSaving(false), 800);
       return () => clearTimeout(timer);
     }
@@ -153,7 +112,6 @@ const App: React.FC = () => {
   const activeProject = useMemo(() => projects.find(p => p.id === activeProjectId), [projects, activeProjectId]);
   const activeCategory = useMemo(() => activeProject?.categories.find(c => c.id === activeCategoryId), [activeProject, activeCategoryId]);
 
-  // --- Auditoría Global de Capítulo ---
   const chapterNodes = useMemo(() => {
     if (!activeCategory) return [];
     return activeCategory.analyses.flatMap((a, idx) =>
@@ -188,7 +146,6 @@ const App: React.FC = () => {
       Desague: new Set(),
       Reductora: new Set()
     };
-
     chapterNodes.forEach(node => {
       const type = node.type || 'Numerico';
       const matches = node.id.match(/\d+/g);
@@ -202,7 +159,6 @@ const App: React.FC = () => {
         });
       }
     });
-
     const missing: { type: string, number: number }[] = [];
     Object.entries(idsByType).forEach(([type, set]) => {
       if (set.size < 2) return;
@@ -210,9 +166,7 @@ const App: React.FC = () => {
       const min = sorted[0];
       const max = sorted[sorted.length - 1];
       for (let i = min; i <= max; i++) {
-        if (!set.has(i)) {
-          missing.push({ type, number: i });
-        }
+        if (!set.has(i)) missing.push({ type, number: i });
       }
     });
     return missing.sort((a, b) => {
@@ -236,108 +190,11 @@ const App: React.FC = () => {
 
   const isAnythingToReportGlobal = unifiedNodesSummaryGlobal.length > 0 || missingNodesGlobal.length > 0;
 
-  const handleToggleMissingNodeReport = (nodeKey: string) => {
-    setNodesToReportMissing(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(nodeKey)) newSet.delete(nodeKey);
-      else newSet.add(nodeKey);
-      return newSet;
-    });
-  };
-
-  const handleToggleSelectAllMissingNodes = () => {
-    if (nodesToReportMissing.size === missingNodesGlobal.length) {
-      setNodesToReportMissing(new Set());
-    } else {
-      const allKeys = missingNodesGlobal.map(n => `${n.type}:${n.number}`);
-      setNodesToReportMissing(new Set(allKeys));
-    }
-  };
-
-  const getPrefixLabel = (type: string) => {
-    const prefixMap: Record<string, string> = {
-      'Corte': 'C',
-      'Ventosa': 'V',
-      'Desague': 'D',
-      'Reductora': 'R',
-      'Numerico': ''
-    };
-    return prefixMap[type] || '';
-  };
-
-  const getFullTypeLabel = (type: string) => {
-    const labelMap: Record<string, string> = {
-      'Corte': 'Cámaras de Corte',
-      'Ventosa': 'Cámaras de Ventosa',
-      'Desague': 'Cámaras de Desagüe',
-      'Reductora': 'Válvulas Reductoras',
-      'Numerico': 'Nudos Numéricos'
-    };
-    return labelMap[type] || type;
-  };
-
-  const formatIdsForDisplayGlobal = (idStr: string, type: string) => {
-    const matches = idStr.match(/\d+/g);
-    if (!matches) return idStr;
-    const prefix = getPrefixLabel(type);
-    return matches.map(m => {
-      const num = parseInt(m, 10);
-      return prefix ? `${prefix}-${num}` : m.padStart(2, '0');
-    }).join(', ');
-  };
-
-  const handleCopyNode = (node: HydraulicNode) => {
-    const nodeToCopy = JSON.parse(JSON.stringify(node));
-    setCopiedNode(nodeToCopy);
-    setNotification('Nudo copiado al portapapeles.');
-  };
-
-  const handlePasteNode = () => {
-    if (!activeProjectId || !activeCategoryId || !activeCategory || !copiedNode) return;
-
-    let nextNum = 1;
-    const allNodeIds = activeCategory.analyses.flatMap(a => a.result?.nodes.map(n => n.id) || []);
-    const numbers = allNodeIds.flatMap(idStr => {
-      const matches = idStr.match(/\d+/g);
-      return matches ? matches.map(m => parseInt(m, 10)) : [];
-    }).filter(n => !isNaN(n));
-
-    if (numbers.length > 0) nextNum = Math.max(...numbers) + 1;
-    const formattedId = nextNum.toString().padStart(2, '0');
-
-    const newNode: HydraulicNode = {
-      ...copiedNode,
-      id: formattedId,
-      nodeName: `${copiedNode.nodeName} (Copia)`,
-    };
-
-    const pasteAnalysis: FileAnalysis = {
-      id: generateId(),
-      image: '',
-      status: 'done',
-      result: { nodes: [newNode], summary: `Copiado de Nudo ${copiedNode.id}` }
-    };
-
-    setProjects(prev => prev.map(p => p.id === activeProjectId ? {
-      ...p,
-      categories: p.categories.map(c => c.id === activeCategoryId ? { ...c, analyses: [...c.analyses, pasteAnalysis] } : c)
-    } : p));
-    setNotification('Nudo pegado con éxito.');
-  };
-
-
-  // --- Manejo de Proyectos ---
   const handleOpenNewProject = () => {
     setIsEditingProject(false);
     setProjectForm({
-      code: 'HDG-',
-      name: '',
-      date: new Date().toISOString().split('T')[0],
-      description: '',
-      version: '1.0',
-      stage: 'Ingeniería de Detalle',
-      commune: '',
-      region: ''
+      code: 'HDG-', name: '', date: new Date().toISOString().split('T')[0],
+      description: '', version: '1.0', stage: 'Ingeniería de Detalle', commune: '', region: ''
     });
     setShowProjectModal(true);
   };
@@ -352,10 +209,7 @@ const App: React.FC = () => {
   };
 
   const handleSaveProject = () => {
-    if (!projectForm.name?.trim()) {
-      alert("El nombre es obligatorio");
-      return;
-    }
+    if (!projectForm.name?.trim()) return;
     if (isEditingProject) {
       setProjects(prev => prev.map(p => p.id === activeProjectId ? { ...p, ...projectForm } as Project : p));
       setNotification('Proyecto actualizado.');
@@ -369,391 +223,88 @@ const App: React.FC = () => {
     setShowProjectModal(false);
   };
 
-  const handleImportProject = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const imported = JSON.parse(e.target?.result as string);
-        if (imported.id && imported.name && Array.isArray(imported.categories)) {
-          const newProject = { ...imported, id: generateId() };
-          setProjects(prev => [...prev, newProject]);
-          setActiveProjectId(newProject.id);
-          setNotification('Proyecto importado con éxito.');
-        } else {
-          throw new Error("Formato inválido");
-        }
-      } catch (err) {
-        alert("El archivo no es un proyecto válido de Hidrogestión");
-      }
-    };
-    reader.readAsText(file);
-  };
-
-  const handleExportProject = async (projectId: string, e?: React.MouseEvent) => {
-    if (e) e.stopPropagation();
-    const projectToExport = projects.find(p => p.id === projectId);
-    if (!projectToExport) return;
-    
-    const fileName = `PROYECTO_${projectToExport.name.replace(/\s+/g, '_')}_${projectToExport.code}.json`;
-    const jsonString = JSON.stringify(projectToExport, null, 2);
-
-    // @ts-ignore
-    if (typeof window.showSaveFilePicker === 'function') {
-      try {
-        // @ts-ignore
-        const handle = await window.showSaveFilePicker({
-          suggestedName: fileName,
-          types: [{
-            description: 'JSON File',
-            accept: { 'application/json': ['.json'] },
-          }],
-        });
-        const writable = await handle.createWritable();
-        await writable.write(jsonString);
-        await writable.close();
-        setNotification('Archivo guardado correctamente.');
-      } catch (err: any) {
-        if (err.name !== 'AbortError') {
-          console.error(err);
-          setNotification('Error al guardar el archivo.');
-        }
-      }
-    } else {
-      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(jsonString);
-      const downloadAnchorNode = document.createElement('a');
-      downloadAnchorNode.setAttribute("href", dataStr);
-      downloadAnchorNode.setAttribute("download", fileName);
-      document.body.appendChild(downloadAnchorNode);
-      downloadAnchorNode.click();
-      downloadAnchorNode.remove();
-      setNotification('Archivo descargado correctamente.');
-    }
-    setShowSaveModal(false);
-  };
-
-  const handleExportLocal = () => {
-    if (!activeProject) return;
-    handleExportProject(activeProject.id);
-  };
-
-  const handleExportAPU = () => {
-    if (!activeCategory) return;
-
-    const materialData = new Map<string, {
-      pieceMap: Map<string, {
-        name: string;
-        unit: string;
-        quantity: number;
-        price: number;
-        totalWeight: number;
-      }>,
-      materialWeight: number
-    }>();
-
-    activeCategory.analyses.forEach(analysis => {
-      analysis.result?.nodes.forEach(node => {
-        const numericIds = node.id.match(/\d+/g) || [];
-        const multiplier = numericIds.length || 1;
-
-        node.pieces.forEach(p => {
-          const normalizedName = p.name ? p.name.trim().toUpperCase() : '';
-          const materialKey = p.material.toUpperCase();
-          if (!materialData.has(materialKey)) {
-            materialData.set(materialKey, { pieceMap: new Map(), materialWeight: 0 });
-          }
-
-          const mGroup = materialData.get(materialKey)!;
-          const key = `${normalizedName}-${p.diameter}-${p.union || 'S/U'}`.toUpperCase();
-          const existing = mGroup.pieceMap.get(key);
-
-          const qty = p.quantity * multiplier;
-          const individualWeight = p.weight || 0;
-          const addedWeight = qty * individualWeight;
-
-          mGroup.materialWeight += addedWeight;
-
-          if (existing) {
-            existing.quantity += qty;
-            existing.totalWeight += addedWeight;
-          } else {
-            const lowerName = normalizedName.toLowerCase();
-            let unit = "Un";
-            if (lowerName.includes('tubo') || lowerName.includes('cañería')) unit = "m";
-            else if (lowerName.includes('hormigón')) unit = "m3";
-
-            let suggestedPrice = 0;
-            const priceKey = Object.keys(SUGGESTED_PRICES).find(k => lowerName.includes(k.toLowerCase()));
-            if (priceKey) suggestedPrice = SUGGESTED_PRICES[priceKey];
-
-            mGroup.pieceMap.set(key, {
-              name: `${normalizedName} ${p.diameter} ${p.union || ''}`.trim(),
-              unit: unit,
-              quantity: qty,
-              price: suggestedPrice,
-              totalWeight: addedWeight
-            });
-          }
-        });
-      });
-    });
-
-    if (materialData.size === 0) return alert("No hay piezas.");
-
-    let csvContent = "\ufeff";
-    const sortedMaterials = Array.from(materialData.keys()).sort();
-
-    sortedMaterials.forEach(material => {
-      const group = materialData.get(material)!;
-      csvContent += `# --- BLOQUE MATERIAL: ${material} (Peso Total: ${group.materialWeight.toFixed(2)} kg) --- #\n`;
-      csvContent += "Nombre;Unidad;Cantidad;Precio\n";
-
-      Array.from(group.pieceMap.values()).forEach(item => {
-        csvContent += `${item.name};${item.unit};${item.quantity};${item.price || ''}\n`;
-      });
-      csvContent += "\n";
-    });
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", `APU_MATERIALES_${activeCategory.name.replace(/\s+/g, '_')}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    setNotification('APU Exportado.');
-  };
-
-  const generateSummaryCSV = (nodes: HydraulicNode[], filename: string) => {
-    if (nodes.length === 0) return alert("No hay nudos para exportar.");
-
-    // Sort nodes by ID
-    const expandedNodes: HydraulicNode[] = [];
-    nodes.forEach(node => {
-      const prefix = getPrefixLabel(node.type);
-      const numericIds: string[] = node.id.match(/\d+/g) || [];
-      if (numericIds.length > 0) {
-        numericIds.forEach(individualId => {
-          const formattedId = prefix ? `${prefix}-${parseInt(individualId, 10)}` : individualId.padStart(2, '0');
-          expandedNodes.push({ ...node, id: formattedId });
-        });
-      } else {
-        expandedNodes.push(node);
-      }
-    });
-
-    expandedNodes.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
-
-    const pieceDetailsMap = new Map<string, { name: string, material: string, diameter: string, union: string, weight: number }>();
-    expandedNodes.forEach(node => {
-      node.pieces.forEach(p => {
-        const normalizedName = p.name ? p.name.trim().toUpperCase() : '';
-        const key = `${p.material}|${normalizedName}|${p.union || 'S/U'}|${p.diameter}`;
-        if (!pieceDetailsMap.has(key)) {
-          const estimatedW = p.weight || getEstimatedWeight(normalizedName, p.diameter, p.material);
-          pieceDetailsMap.set(key, {
-            name: normalizedName,
-            material: p.material,
-            diameter: p.diameter,
-            union: p.union || 'S/U',
-            weight: estimatedW
-          });
-        } else {
-          const current = pieceDetailsMap.get(key)!;
-          if (p.weight && (current.weight === 0 || current.weight !== p.weight)) {
-            current.weight = p.weight;
-          }
-        }
-      });
-    });
-
-    const uniquePieceKeys = Array.from(pieceDetailsMap.keys()).sort((a, b) => {
-      const matA = pieceDetailsMap.get(a)!.material;
-      const matB = pieceDetailsMap.get(b)!.material;
-      if (matA !== matB) return matA.localeCompare(matB);
-      return a.localeCompare(b);
-    });
-
-    let csvContent = "\ufeff";
-    csvContent += "ID Nudo;Nombre Nudo;";
-    uniquePieceKeys.forEach(k => csvContent += `${pieceDetailsMap.get(k)?.material};`);
-    csvContent += "TOTAL PIEZAS;ANCLAJE\n";
-
-    csvContent += ";;";
-    uniquePieceKeys.forEach(k => csvContent += `${pieceDetailsMap.get(k)?.name};`);
-    csvContent += ";\n";
-
-    csvContent += ";;";
-    uniquePieceKeys.forEach(k => csvContent += `${pieceDetailsMap.get(k)?.diameter};`);
-    csvContent += ";\n";
-
-    const totalQuantitiesPerPiece = new Map<string, number>();
-    uniquePieceKeys.forEach(k => totalQuantitiesPerPiece.set(k, 0));
-    let grandTotalPieces = 0;
-    let totalAnchorages = 0;
-
-    expandedNodes.forEach(node => {
-      csvContent += `${node.id};${node.nodeName};`;
-      let rowSum = 0;
-      uniquePieceKeys.forEach(k => {
-        const found = node.pieces.find(p => {
-          const pName = p.name ? p.name.trim().toUpperCase() : '';
-          return `${p.material}|${pName}|${p.union || 'S/U'}|${p.diameter}` === k;
-        });
-        const qty = found ? found.quantity : 0;
-        csvContent += `${qty || ''};`;
-        rowSum += qty;
-        totalQuantitiesPerPiece.set(k, totalQuantitiesPerPiece.get(k)! + qty);
-      });
-      csvContent += `${rowSum};${node.anchorageCount || 0}\n`;
-      grandTotalPieces += rowSum;
-      totalAnchorages += node.anchorageCount || 0;
-    });
-
-    csvContent += "\n";
-    csvContent += "CANTIDAD TOTAL;;";
-    uniquePieceKeys.forEach(k => {
-      csvContent += `${totalQuantitiesPerPiece.get(k)};`;
-    });
-    csvContent += `${grandTotalPieces};${totalAnchorages}\n`;
-
-    csvContent += "PESO UNITARIO (kg);;";
-    uniquePieceKeys.forEach(k => {
-      csvContent += `${pieceDetailsMap.get(k)?.weight.toString().replace('.', ',')};`;
-    });
-    csvContent += ";\n";
-
-    csvContent += "PESO TOTAL (kg);;";
-    let grandTotalWeight = 0;
-    uniquePieceKeys.forEach(k => {
-      const q = totalQuantitiesPerPiece.get(k)!;
-      const w = pieceDetailsMap.get(k)?.weight || 0;
-      const subTotalW = q * w;
-      csvContent += `${subTotalW.toFixed(2).replace('.', ',')};`;
-      grandTotalWeight += subTotalW;
-    });
-    csvContent += `${grandTotalWeight.toFixed(2).replace('.', ',')};\n`;
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", filename);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    setNotification('Tabla de Resumen Exportada.');
-  };
-
-  const handleExportSummaryTable = () => {
-    if (!activeCategory) return;
-    const rawNodes = activeCategory.analyses.flatMap(a => a.result?.nodes || []);
-    generateSummaryCSV(rawNodes, `RESUMEN_PIEZAS_${activeCategory.name.replace(/\s+/g, '_')}.csv`);
-  };
-
-  const handleExportAnalysisTable = (analysisId: string) => {
-    if (!activeCategory) return;
-    const analysis = activeCategory.analyses.find(a => a.id === analysisId);
-    if (!analysis || !analysis.result) return;
-
-    // Fallback name if customName is missing, using ID or index if available (passed from card logic usually, but here we just use what we have)
-    const namePart = analysis.customName || `Doc_${analysis.id.slice(0, 4)}`;
-    generateSummaryCSV(analysis.result.nodes, `RESUMEN_PIEZAS_DOC_${namePart.replace(/\s+/g, '_')}.csv`);
-  };
-
-  const handleSaveToDrive = async () => {
-    alert("Esta funcionalidad requiere configuración de API de Google Drive.");
-    setShowSaveModal(false);
-  };
-
-  // --- Manejo de Biblioteca ---
-  const handleExportLibrary = () => {
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(libraryNodes, null, 2));
-    const downloadAnchorNode = document.createElement('a');
-    downloadAnchorNode.setAttribute("href", dataStr);
-    downloadAnchorNode.setAttribute("download", "BIBLIOTECA_ESTANDAR_HIDROGESTION.json");
-    document.body.appendChild(downloadAnchorNode);
-    downloadAnchorNode.click();
-    downloadAnchorNode.remove();
-    setNotification('Biblioteca exportada.');
-  };
-
-  const handleImportLibrary = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const imported = JSON.parse(e.target?.result as string);
-        if (Array.isArray(imported)) {
-          setLibraryNodes(prev => [...prev, ...imported]);
-          setNotification('Biblioteca importada con éxito.');
-        } else {
-          throw new Error("Formato inválido");
-        }
-      } catch (err) {
-        alert("El archivo no es un biblioteca válida");
-      }
-    };
-    reader.readAsText(file);
-  };
-
-  const handleUpdateAnalysisStatus = (analysisId: string, status: FileAnalysis['status']) => {
-    setProjects(prev => prev.map(p => p.id === activeProjectId ? {
-      ...p,
-      categories: p.categories.map(c => c.id === activeCategoryId ? {
-        ...c,
-        analyses: c.analyses.map(a => a.id === analysisId ? { ...a, status } : a)
-      } : c)
-    } : p));
-  };
-
-  const handleUpdateAnalysisResult = (analysisId: string, result: AnalysisResult) => {
-    setProjects(prev => prev.map(p => p.id === activeProjectId ? {
-      ...p,
-      categories: p.categories.map(c => c.id === activeCategoryId ? {
-        ...c,
-        analyses: c.analyses.map(a => a.id === analysisId ? { ...a, status: 'done', result } : a)
-      } : c)
-    } : p));
-  };
-
-  const handleRequestProcess = async (analysisId: string) => {
-    if (!activeCategory) return;
-    const analysis = activeCategory.analyses.find(a => a.id === analysisId);
-    if (!analysis || !analysis.image) return;
-
-    handleUpdateAnalysisStatus(analysisId, 'analyzing');
+  const processAnalysis = async (analysisId: string) => {
+    if (!activeProjectId || !activeCategoryId) return;
+    if (credits <= 0) return alert("Sin créditos.");
+    updateAnalysisStatus(analysisId, 'analyzing');
     try {
-      const result = await analyzeHydraulicPlan(analysis.image);
-      handleUpdateAnalysisResult(analysisId, result);
-      setCredits(c => Math.max(0, c - 1));
+      const img = activeCategory?.analyses.find(a => a.id === analysisId)?.image;
+      if (!img) throw new Error("Archivo no disponible");
+      const result = await analyzeHydraulicPlan(img);
+      setCredits(prev => Math.max(0, prev - 1));
+      if (result && result.nodes) {
+        result.nodes = result.nodes.map(n => ({ ...n, id: sortIdString(n.id) }));
+      }
+      updateAnalysisResult(analysisId, result);
       setNotification('Análisis completado.');
-    } catch (error) {
-      handleUpdateAnalysisStatus(analysisId, 'error');
-      setNotification('Error al analizar imagen.');
+    } catch (err) {
+      updateAnalysisStatus(analysisId, 'error');
     }
+  };
+
+  const updateAnalysisStatus = (id: string, status: FileAnalysis['status']) => {
+    setProjects(prev => prev.map(p => p.id === activeProjectId ? {
+      ...p,
+      categories: p.categories.map(c => c.id === activeCategoryId ? {
+        ...c,
+        analyses: c.analyses.map(a => a.id === id ? { ...a, status } : a)
+      } : c)
+    } : p));
+  };
+
+  const updateAnalysisResult = (id: string, result: AnalysisResult) => {
+    setProjects(prev => prev.map(p => p.id === activeProjectId ? {
+      ...p,
+      categories: p.categories.map(c => c.id === activeCategoryId ? {
+        ...c,
+        analyses: c.analyses.map(a => a.id === id ? { ...a, status: 'done', result } : a)
+      } : c)
+    } : p));
+  };
+
+  const handleUpdateAnalysisName = (analysisId: string, newName: string) => {
+    setProjects(prev => prev.map(p => p.id === activeProjectId ? {
+      ...p,
+      categories: p.categories.map(c => c.id === activeCategoryId ? {
+        ...c,
+        analyses: c.analyses.map(a => a.id === analysisId ? { ...a, customName: newName } : a)
+      } : c)
+    } : p));
+  };
+
+  const handleUpdateNode = (analysisId: string, nodeId: string, updates: Partial<HydraulicNode>) => {
+    if (updates.id) updates.id = sortIdString(updates.id);
+    setProjects(prev => prev.map(p => p.id === activeProjectId ? {
+      ...p,
+      categories: p.categories.map(c => c.id === activeCategoryId ? {
+        ...c,
+        analyses: c.analyses.map(a => a.id === analysisId ? {
+          ...a,
+          result: a.result ? { ...a.result, nodes: a.result.nodes.map(n => n.id === nodeId ? { ...n, ...updates } : n) } : undefined
+        } : a)
+      } : c)
+    } : p));
+  };
+
+  const handleRemoveNode = (analysisId: string, nodeId: string) => {
+    const analysis = activeCategory?.analyses.find(a => a.id === analysisId);
+    const node = analysis?.result?.nodes.find(n => n.id === nodeId);
+    setDeleteConfirm({ show: true, type: 'node', projectId: activeProjectId!, analysisId, nodeId, name: node?.nodeName || 'Nudo' });
   };
 
   const executeDeletion = () => {
     const { type, projectId, categoryId, analysisId, nodeId } = deleteConfirm;
-
     if (type === 'project') {
       setProjects(prev => prev.filter(p => p.id !== projectId));
-      if (activeProjectId === projectId) { 
-        setActiveProjectId(null); 
-        setActiveCategoryId(null); 
-      }
+      if (activeProjectId === projectId) { setActiveProjectId(null); setActiveCategoryId(null); }
       setNotification('Proyecto eliminado.');
     } else if (type === 'category') {
-      setProjects(prev => prev.map(p => p.id === projectId ? {
-        ...p, categories: p.categories.filter(c => c.id !== categoryId)
-      } : p));
+      setProjects(prev => prev.map(p => p.id === projectId ? { ...p, categories: p.categories.filter(c => c.id !== categoryId) } : p));
       if (activeCategoryId === categoryId) setActiveCategoryId(null);
       setNotification('Capítulo eliminado.');
     } else if (type === 'analysis') {
       setProjects(prev => prev.map(p => p.id === activeProjectId ? {
-        ...p, categories: p.categories.map(c => c.id === activeCategoryId ? {
-          ...c, analyses: c.analyses.filter(a => a.id !== analysisId)
-        } : c)
+        ...p, categories: p.categories.map(c => c.id === activeCategoryId ? { ...c, analyses: c.analyses.filter(a => a.id !== analysisId) } : c)
       } : p));
       setNotification('Análisis eliminado.');
     } else if (type === 'node') {
@@ -765,10 +316,81 @@ const App: React.FC = () => {
         } : c)
       } : p));
     }
-    
-    // Al finalizar cualquier borrado, cerramos el modal
     setDeleteConfirm({ ...deleteConfirm, show: false });
   };
+
+  const handleImagesSelected = (base64List: string[]) => {
+    if (!activeProjectId || !activeCategoryId) return;
+    const newAnalyses: FileAnalysis[] = base64List.map(img => ({ id: generateId(), image: img, status: 'pending' }));
+    setProjects(prev => prev.map(p => p.id === activeProjectId ? {
+      ...p,
+      categories: p.categories.map(c => c.id === activeCategoryId ? { ...c, analyses: [...c.analyses, ...newAnalyses] } : c)
+    } : p));
+  };
+
+  const handleAddCategory = (projectId: string) => {
+    setActiveProjectId(projectId);
+    setNewCategoryName('');
+    setShowCategoryModal(true);
+  };
+
+  const handleSaveCategory = () => {
+    if (!activeProjectId || !newCategoryName.trim()) return;
+    const newCat: Category = { id: generateId(), name: newCategoryName.trim(), analyses: [] };
+    setProjects(prev => prev.map(p => p.id === activeProjectId ? { ...p, categories: [...(p.categories || []), newCat] } : p));
+    setActiveCategoryId(newCat.id);
+    setShowCategoryModal(false);
+    setNotification('Capítulo creado.');
+  };
+
+  const handleRequestAddNode = (analysisId: string) => {
+    setTargetAnalysisId(analysisId);
+    setShowAddNodeModal(true);
+  };
+
+  const handleCreateEmptyNode = () => {
+    if (!activeProjectId || !activeCategoryId || !activeCategory || !targetAnalysisId) return;
+    const currentNodes = activeCategory.analyses.find(a => a.id === targetAnalysisId)?.result?.nodes || [];
+    const allNodeIds = currentNodes.map(n => n.id);
+    let nextNum = 1;
+    const numbers = allNodeIds.flatMap(idStr => (idStr.match(/\d+/g) || []).map(m => parseInt(m, 10))).filter(n => !isNaN(n));
+    if (numbers.length > 0) nextNum = Math.max(...numbers) + 1;
+    const formattedId = nextNum.toString().padStart(2, '0');
+    const newNode: HydraulicNode = { id: formattedId, nodeName: 'Nuevo Nudo', type: 'Numerico', pieces: [], anchorageCount: 0, isManual: true };
+    
+    setProjects(prev => prev.map(p => p.id === activeProjectId ? {
+      ...p, categories: p.categories.map(c => c.id === activeCategoryId ? {
+        ...c, analyses: c.analyses.map(a => a.id === targetAnalysisId ? {
+          ...a, result: a.result ? { ...a.result, nodes: [...a.result.nodes, newNode] } : { nodes: [newNode], summary: 'Manual' },
+          status: 'done' as const
+        } : a)
+      } : c)
+    } : p));
+    setShowAddNodeModal(false);
+  };
+
+  const handleUseLibraryNode = (node: LibraryNode) => {
+    if (!activeProjectId || !activeCategoryId || !activeCategory || !targetAnalysisId) return;
+    const currentNodes = activeCategory.analyses.find(a => a.id === targetAnalysisId)?.result?.nodes || [];
+    const allNodeIds = currentNodes.map(n => n.id);
+    let nextNum = 1;
+    const numbers = allNodeIds.flatMap(idStr => (idStr.match(/\d+/g) || []).map(m => parseInt(m, 10))).filter(n => !isNaN(n));
+    if (numbers.length > 0) nextNum = Math.max(...numbers) + 1;
+    const formattedId = nextNum.toString().padStart(2, '0');
+    const newNode: HydraulicNode = { ...node, id: formattedId, isManual: true };
+
+    setProjects(prev => prev.map(p => p.id === activeProjectId ? {
+      ...p, categories: p.categories.map(c => c.id === activeCategoryId ? {
+        ...c, analyses: c.analyses.map(a => a.id === targetAnalysisId ? {
+          ...a, result: a.result ? { ...a.result, nodes: [...a.result.nodes, newNode] } : { nodes: [newNode], summary: 'Desde Biblioteca' },
+          status: 'done' as const
+        } : a)
+      } : c)
+    } : p));
+    setShowLibraryModal(false);
+  };
+
+  const [targetAnalysisId, setTargetAnalysisId] = useState<string | null>(null);
 
   return (
     <div className="flex h-screen bg-[#f1f5f9] overflow-hidden font-['Inter']">
@@ -783,13 +405,9 @@ const App: React.FC = () => {
         onSelectCategory={setActiveCategoryId} 
         onOpenNewProject={handleOpenNewProject} 
         onOpenEditProject={handleOpenEditProject}
-        onDeleteProject={(pid, e) => { 
-          e.stopPropagation(); 
-          const p = projects.find(x => x.id === pid); 
-          if (p) setDeleteConfirm({ show: true, type: 'project', projectId: pid, name: p.name }); 
-        }}
-        onExportProject={handleExportProject}
-        onOpenLibrary={() => setShowLibraryModal(true)} 
+        onDeleteProject={(pid, e) => { e.stopPropagation(); const p = projects.find(x => x.id === pid); if (p) setDeleteConfirm({ show: true, type: 'project', projectId: pid, name: p.name }); }}
+        onExportProject={(pid, e) => handleExportProject(pid, e)}
+        onOpenLibrary={() => { setTargetAnalysisId(null); setShowLibraryModal(true); }} 
         onAddCategory={handleAddCategory} 
         onEditCategory={handleEditCategory} 
         onRemoveCategory={handleRemoveCategory}
@@ -801,282 +419,83 @@ const App: React.FC = () => {
         <i className={`fa-solid ${isSidebarOpen ? 'fa-chevron-left' : 'fa-chevron-right'} text-[10px]`}></i>
       </button>
 
-      <main className="flex-grow flex flex-col overflow-hidden bg-[#f8fafc]">
-        {activeProject ? (
-          <>
-            <header className="bg-white border-b border-slate-200 px-10 py-5 flex items-center justify-between z-20 shadow-sm shrink-0">
-              <div className="flex flex-col">
-                <div className="flex items-center gap-4">
-                  <h2 className="text-xl font-black text-[#004071] uppercase tracking-tighter leading-none">{activeProject.name}</h2>
-                  <button onClick={() => handleOpenEditProject(activeProject.id)} className="text-[#88C13E] hover:text-[#004071] transition-colors"><i className="fa-solid fa-pen-to-square text-sm"></i></button>
-                  <span className="text-[10px] font-black text-white uppercase tracking-widest bg-[#004071] px-2 py-1 rounded-md">{activeProject.code}</span>
-                  {isAutoSaving && (
-                    <span className="text-[8px] font-black text-[#88C13E] uppercase tracking-widest bg-[#88C13E]/10 px-2 py-1 rounded animate-pulse">
-                      <i className="fa-solid fa-sync mr-1"></i> Auto-guardando
-                    </span>
-                  )}
-                </div>
-                {activeCategory && <div className="mt-2"><span className="text-[9px] font-black text-[#88C13E] uppercase tracking-widest bg-[#88C13E]/10 px-2 py-0.5 rounded-md">Capítulo: {activeCategory.name}</span></div>}
-              </div>
-              <div className="flex items-center gap-4">
-                <div className="relative group">
-                  <i className="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-[#88C13E] transition-colors"></i>
-                  <input type="text" placeholder="Buscar nudo..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-12 pr-6 py-3 bg-slate-50 border border-slate-100 rounded-2xl text-[11px] font-bold text-[#004071] w-64 focus:bg-white focus:border-[#88C13E] outline-none" />
-                </div>
-                <div className="flex items-center gap-2">
-                  <button onClick={() => setShowSaveModal(true)} className="px-6 py-3 bg-[#004071] text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg flex items-center gap-2 hover:bg-[#002D50] transition-all">
-                    <i className="fa-solid fa-cloud-arrow-up text-xs"></i> Guardar
-                  </button>
-                  {activeCategory && (
-                    <div className="flex items-center gap-2">
-                      <button onClick={handleExportSummaryTable} className="px-4 py-3 bg-[#88C13E] text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-sm flex items-center gap-2 hover:bg-[#a6bf2e]">
-                        <i className="fa-solid fa-table-list text-xs"></i> Tabla
-                      </button>
-                      <button onClick={handleExportAPU} className="px-4 py-3 bg-[#88C13E] text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-md flex items-center gap-2 hover:bg-[#a6bf2e]">
-                        <i className="fa-solid fa-file-invoice-dollar text-xs"></i> APU
-                      </button>
+      <main className="flex-grow overflow-y-auto p-8">
+        <div className="max-w-5xl mx-auto">
+          {activeCategory ? (
+            <div className="space-y-6 pb-20">
+                <div className="flex justify-between items-center mb-8">
+                    <div>
+                        <h1 className="text-2xl font-bold text-[#004071] uppercase tracking-tighter">{activeCategory.name}</h1>
+                        <p className="text-gray-400">{activeProject?.name}</p>
                     </div>
-                  )}
-                  <button
-                    onClick={handlePasteNode}
-                    disabled={!copiedNode || !activeCategoryId}
-                    className="px-4 py-3 bg-[#004071] text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-sm flex items-center gap-2 hover:bg-[#002D50] disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <i className="fa-solid fa-paste text-xs"></i> Pegar
-                  </button>
+                    <div className="flex gap-2">
+                        <button onClick={() => setShowAuditReportModal(true)} className="flex items-center gap-2 bg-[#004071] text-white px-4 py-2 rounded-lg font-bold text-sm shadow-md hover:bg-blue-800 transition-all"><i className="fa-solid fa-file-contract"></i> Reporte</button>
+                    </div>
                 </div>
-              </div>
-            </header>
-
-            <div className="flex-grow overflow-y-auto p-10">
-              <div className="max-w-[1400px] mx-auto space-y-10">
-                {!activeCategoryId ? (
-                  <div className="h-[60vh] flex flex-col items-center justify-center text-center opacity-40">
-                    <i className="fa-solid fa-tags text-6xl mb-6 text-[#004071]"></i>
-                    <h3 className="text-xl font-black uppercase text-[#004071]">Selecciona un Capítulo</h3>
-                  </div>
-                ) : (
-                  <div className="space-y-6 pb-20">
-                    {/* SECCIÓN DE AUDITORÍA GLOBAL DEL CAPÍTULO */}
-                    {isAnythingToReportGlobal && (
-                      <div className="space-y-6 mb-10">
-                        <div className="bg-blue-50 border border-blue-200 rounded-[1.5rem] overflow-hidden shadow-sm animate-in slide-in-from-top-4 duration-500">
-                          <div
-                            onClick={() => toggleSection('audit')}
-                            className="p-6 flex items-start gap-5 cursor-pointer hover:bg-blue-100/50 transition-colors"
-                          >
-                            <div className="w-12 h-12 bg-blue-500 text-white rounded-2xl flex items-center justify-center shrink-0 shadow-lg shadow-blue-500/20">
-                              <i className="fa-solid fa-file-invoice text-xl"></i>
-                            </div>
-                            <div className="flex-grow">
-                              <h5 className="text-[11px] font-black text-blue-900 uppercase tracking-widest mb-1 flex items-center justify-between">
-                                Auditoría Técnica de Capítulo (Global)
-                                <i className={`fa-solid ${collapsedSections.audit ? 'fa-chevron-down' : 'fa-chevron-up'} text-[10px]`}></i>
-                              </h5>
-                              {!collapsedSections.audit && (
-                                <>
-                                  <p className="text-xs text-blue-700 mb-4">
-                                    Revisión consolidada de toda la planimetría de este capítulo. Genera una minuta técnica integral.
-                                  </p>
-                                  <ul className="list-disc list-inside text-xs text-blue-800 font-bold space-y-1">
-                                    {unifiedNodesSummaryGlobal.length > 0 && <li>{unifiedNodesSummaryGlobal.length} esquema(s) repetido(s) detectados globalmente.</li>}
-                                    {missingNodesGlobal.length > 0 && <li>{missingNodesGlobal.length} nudo(s) faltante(s) en la secuencia total.</li>}
-                                  </ul>
-                                  <button
-                                    onClick={(e) => { e.stopPropagation(); setShowAuditReportModal(true); }}
-                                    className="mt-4 px-4 py-2 bg-blue-500 text-white rounded-xl text-[9px] font-black uppercase hover:shadow-lg transition-all self-start"
-                                  >
-                                    <i className="fa-solid fa-file-pdf mr-2"></i> Generar Minuta Global
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-
-                        {unifiedNodesSummaryGlobal.length > 0 && !collapsedSections.audit && (
-                          <div className="bg-green-50 border border-green-200 rounded-[1.5rem] overflow-hidden shadow-sm animate-in fade-in duration-500">
-                            <div
-                              onClick={() => toggleSection('schemes')}
-                              className="p-6 flex items-start gap-5 cursor-pointer hover:bg-green-100/50 transition-colors"
-                            >
-                              <div className="w-12 h-12 bg-green-500 text-white rounded-2xl flex items-center justify-center shrink-0 shadow-lg shadow-green-500/20">
-                                <i className="fa-solid fa-object-group text-xl"></i>
-                              </div>
-                              <div className="flex-grow">
-                                <h5 className="text-[11px] font-black text-green-900 uppercase tracking-widest mb-2 flex items-center justify-between">
-                                  Observación: Esquemas Repetidos en el Capítulo
-                                  <i className={`fa-solid ${collapsedSections.schemes ? 'fa-chevron-down' : 'fa-chevron-up'} text-[10px]`}></i>
-                                </h5>
-                                {!collapsedSections.schemes && (
-                                  <div className="space-y-1.5 mt-2">
-                                    {unifiedNodesSummaryGlobal.map((node, index) => (
-                                      <p key={index} className="text-[10px] text-green-700 font-bold uppercase opacity-90 leading-relaxed">
-                                        Para <span className="text-green-900 font-black">"{node.nodeName}"</span>, se detectaron dibujos idénticos para <span className="text-green-900 font-black">{formatIdsForDisplayGlobal((node.sourceGroupings || [])[0], node.type)}</span> y {(node.sourceGroupings || []).slice(1).map((group, i) => (
-                                          <span key={i}>
-                                            <span className="text-green-900 font-black">{formatIdsForDisplayGlobal(group as string, node.type)}</span>{i < (node.sourceGroupings?.length || 0) - 2 ? ' y ' : ''}
-                                          </span>
-                                        ))}.
-                                      </p>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        {missingNodesGlobal.length > 0 && !collapsedSections.audit && (
-                          <div className="bg-sky-50 border border-sky-200 rounded-[1.5rem] overflow-hidden shadow-sm">
-                            <div
-                              onClick={() => toggleSection('missing')}
-                              className="p-6 flex items-start gap-5 cursor-pointer hover:bg-sky-100/50 transition-colors"
-                            >
-                              <div className="w-12 h-12 bg-sky-500 text-white rounded-2xl flex items-center justify-center shrink-0 shadow-lg shadow-sky-500/20">
-                                <i className="fa-solid fa-search-plus text-xl"></i>
-                              </div>
-                              <div className="flex-grow">
-                                <h5 className="text-[11px] font-black text-sky-900 uppercase tracking-widest mb-2 flex items-center justify-between">
-                                  Observación: Nudos Faltantes Globales
-                                  <i className={`fa-solid ${collapsedSections.missing ? 'fa-chevron-down' : 'fa-chevron-up'} text-[10px]`}></i>
-                                </h5>
-                                {!collapsedSections.missing && (
-                                  <>
-                                    <p className="text-xs text-sky-700 mb-4 uppercase font-bold opacity-70">Evaluación de saltos en la secuencia de todo el capítulo:</p>
-                                    <div className="mb-6">
-                                      <label
-                                        className="inline-flex items-center gap-2 px-3 py-1.5 bg-white border-2 border-sky-300 rounded-lg cursor-pointer hover:bg-sky-100 transition-colors font-black text-sky-900 text-xs"
-                                        onClick={(e) => e.stopPropagation()}
-                                      >
-                                        <input
-                                          type="checkbox"
-                                          checked={nodesToReportMissing.size === missingNodesGlobal.length}
-                                          ref={el => { if (el) el.indeterminate = nodesToReportMissing.size > 0 && nodesToReportMissing.size < missingNodesGlobal.length; }}
-                                          onChange={(e) => { e.stopPropagation(); handleToggleSelectAllMissingNodes(); }}
-                                          className="h-4 w-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500"
-                                        />
-                                        MARCAR TODOS
-                                      </label>
-                                    </div>
-
-                                    <div className="space-y-6">
-                                      {(Object.entries(missingNodesGrouped) as [string, { type: string, number: number }[]][]).map(([type, nodes]) => (
-                                        <div key={type} className="space-y-2">
-                                          <h6 className="text-[9px] font-black text-sky-900 uppercase tracking-widest border-b border-sky-200 pb-1">{getFullTypeLabel(type)}:</h6>
-                                          <div className="flex flex-wrap gap-2 pt-1">
-                                            {nodes.map(n => {
-                                              const nodeKey = `${n.type}:${n.number}`;
-                                              const prefix = getPrefixLabel(n.type);
-                                              const label = prefix ? `${prefix}-${n.number}` : String(n.number).padStart(2, '0');
-                                              return (
-                                                <label
-                                                  key={nodeKey}
-                                                  className="flex items-center gap-2 px-3 py-1.5 bg-white border border-sky-200 rounded-lg cursor-pointer hover:bg-sky-200 transition-colors"
-                                                  onClick={(e) => e.stopPropagation()}
-                                                >
-                                                  <input
-                                                    type="checkbox"
-                                                    checked={nodesToReportMissing.has(nodeKey)}
-                                                    onChange={(e) => { e.stopPropagation(); handleToggleMissingNodeReport(nodeKey); }}
-                                                    className="h-4 w-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500"
-                                                  />
-                                                  <span className="text-[10px] font-black text-sky-800 uppercase tracking-tighter">ID {label}</span>
-                                                </label>
-                                              );
-                                            })}
-                                          </div>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {activeCategory?.analyses.map((analysis, index) => (
-                      <AnalysisCard
+                {activeCategory.analyses.map((analysis, idx) => (
+                    <AnalysisCard 
                         key={analysis.id}
-                        analysis={{ ...analysis, documentNumber: index + 1 }}
-                        onProcess={handleRequestProcess}
-                        onRemove={removeAnalysis}
+                        analysis={{...analysis, documentNumber: idx + 1}}
+                        onProcess={processAnalysis}
                         onUpdateAnalysisName={handleUpdateAnalysisName}
                         onUpdateNode={handleUpdateNode}
                         onRemoveNode={handleRemoveNode}
+                        onRemove={removeAnalysis}
                         onSaveToLibrary={handleSaveToLibrary}
+                        onCopyNode={handleCopyNode}
                         onAddNode={handleRequestAddNode}
                         searchTerm={searchTerm}
                         duplicateIds={chapterDuplicateIds}
                         credits={credits}
-                        onCopyNode={handleCopyNode}
                         activeProject={activeProject}
-                        onExportTable={handleExportAnalysisTable}
-                      />
-                    ))}
-                    <div className="pt-10 border-t border-slate-200 flex flex-col items-center">
-                      <FileUploader onImagesSelected={handleImagesSelected} loading={false} />
-                    </div>
-                  </div>
-                )}
-              </div>
+                    />
+                ))}
+                <FileUploader onImagesSelected={handleImagesSelected} loading={false} />
             </div>
-          </>
-        ) : (
-          <div className="h-full flex flex-col items-center justify-center">
-            <h1 className="text-6xl font-[1000] text-[#004071] uppercase tracking-tighter text-center leading-[0.85]">HIDROGESTIÓN <br /> <span className="text-[#88C13E]">GESTOR DE NUDOS</span></h1>
-            <button onClick={handleOpenNewProject} className="mt-16 px-20 py-6 bg-[#004071] text-white rounded-[2.5rem] font-black uppercase tracking-[0.4em] shadow-2xl transition-all scale-110 hover:bg-[#88C13E]">NUEVO PROYECTO</button>
-          </div>
-        )}
-
-        {notification && (
-          <div className="fixed bottom-6 right-6 bg-[#004071] border-l-4 border-[#88C13E] text-white px-8 py-4 rounded-2xl shadow-2xl flex items-center gap-4 animate-in slide-in-from-right duration-500 z-[300]">
-            <div className="w-8 h-8 bg-[#88C13E] rounded-full flex items-center justify-center">
-              <i className="fa-solid fa-check text-xs"></i>
+          ) : (
+            <div className="h-full flex flex-col items-center justify-center text-gray-500 py-40">
+              <i className="fa-solid fa-folder-open text-6xl mb-4 opacity-20"></i>
+              <p>Selecciona un proyecto y capítulo para comenzar</p>
             </div>
-            <span className="text-xs font-black uppercase tracking-widest">{notification}</span>
-          </div>
-        )}
+          )}
+        </div>
+      </main>
 
-        {showAddNodeModal && (
+      {showProjectModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+          <div className="bg-white w-full max-w-xl p-8 rounded-3xl border border-slate-200">
+            <h2 className="text-xl font-bold mb-6 text-[#004071]">{isEditingProject ? 'Editar Proyecto' : 'Nuevo Proyecto'}</h2>
+            <div className="space-y-4">
+                <input type="text" placeholder="Nombre del proyecto" value={projectForm.name} onChange={e => setProjectForm({...projectForm, name: e.target.value})} className="w-full p-3 border rounded-xl" />
+                <input type="text" placeholder="Código" value={projectForm.code} onChange={e => setProjectForm({...projectForm, code: e.target.value})} className="w-full p-3 border rounded-xl" />
+                <div className="flex justify-end gap-3 pt-4">
+                    <button onClick={() => setShowProjectModal(false)} className="px-6 py-2 text-slate-400">Cancelar</button>
+                    <button onClick={handleSaveProject} className="px-8 py-2 bg-[#004071] text-white rounded-xl font-bold">Guardar</button>
+                </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showCategoryModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+          <div className="bg-white w-full max-w-md p-8 rounded-3xl border border-slate-200">
+            <h2 className="text-xl font-bold mb-6 text-[#004071]">Nuevo Capítulo</h2>
+            <input type="text" placeholder="Nombre del capítulo" value={newCategoryName} onChange={e => setNewCategoryName(e.target.value)} className="w-full p-3 border rounded-xl mb-6" autoFocus />
+            <div className="flex justify-end gap-3">
+                <button onClick={() => setShowCategoryModal(false)} className="px-6 py-2 text-slate-400">Cancelar</button>
+                <button onClick={handleSaveCategory} className="px-8 py-2 bg-[#004071] text-white rounded-xl font-bold">Crear</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showAddNodeModal && (
           <AddNodeModal
             onClose={() => setShowAddNodeModal(false)}
             onCreateEmpty={handleCreateEmptyNode}
             onOpenLibrary={() => setShowLibraryModal(true)}
           />
-        )}
-
-        {showSaveModal && (
-          <div className="fixed inset-0 bg-[#002d50]/90 backdrop-blur-md z-[250] flex items-center justify-center p-4">
-            <div className="bg-white w-full max-w-xl rounded-[3rem] overflow-hidden border border-gray-700 shadow-2xl">
-              <div className="px-10 py-8 bg-[#f8fafc] border-b border-gray-700 flex justify-between items-center">
-                <h2 className="text-2xl font-bold text-[#004071] uppercase tracking-tighter">Opciones de Guardado</h2>
-                <button onClick={() => setShowSaveModal(false)} className="text-gray-400 hover:text-white">X</button>
-              </div>
-              <div className="p-10 space-y-6">
-                <button onClick={handleExportLocal} className="w-full text-left p-6 bg-gray-700 hover:bg-gray-600 rounded-xl transition-colors flex items-center gap-4 text-white">
-                   <div className="p-3 bg-blue-600 rounded-lg text-white"><Download size={24}/></div>
-                   <div>
-                     <div className="font-bold">Descargar Copia (.json)</div>
-                     <div className="text-sm text-gray-400">Guarda un respaldo local de tu proyecto.</div>
-                   </div>
-                </button>
-                <button onClick={handleSaveToDrive} className="w-full text-left p-6 bg-gray-700/50 opacity-50 cursor-not-allowed rounded-xl flex items-center gap-4 text-white">
-                   <div className="p-3 bg-gray-600 rounded-lg text-white"><FileText size={24}/></div>
-                   <div>
-                     <div className="font-bold">Google Drive (Próximamente)</div>
-                   </div>
-                </button>
-              </div>
-              <div className="px-10 py-6 bg-slate-50 flex justify-end">
-                <button onClick={() => setShowSaveModal(false)} className="px-10 py-3 bg-[#004071] text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl hover:bg-[#88C13E] transition-all">
-                  Cerrar
-                </button>
-              </div>
-            </div>
-          </div>
       )}
 
       {showLibraryModal && (
@@ -1093,16 +512,22 @@ const App: React.FC = () => {
       )}
 
       {deleteConfirm.show && (
-        <div className="fixed inset-0 bg-[#002d50]/80 backdrop-blur-md z-[200] flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-md rounded-[2.5rem] p-10 shadow-2xl text-center">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-md rounded-2xl p-8 border border-red-100 shadow-2xl text-center">
             <AlertTriangle className="mx-auto text-red-500 mb-4" size={48} />
-            <h2 className="text-xl font-black text-[#004071] uppercase mb-3">¿Confirmar eliminación?</h2>
-            <p className="text-sm text-slate-500 mb-8">Desea eliminar definitivamente: <b>"{deleteConfirm.name}"</b>. Esta acción borrará todos los datos asociados.</p>
-            <div className="flex flex-col gap-3">
-              <button onClick={executeDeletion} className="w-full py-4 bg-red-600 text-white rounded-2xl text-[11px] font-black uppercase tracking-widest">Sí, eliminar definitivamente</button>
-              <button onClick={() => setDeleteConfirm({ ...deleteConfirm, show: false })} className="w-full py-4 bg-slate-100 text-slate-500 rounded-2xl text-[11px] font-black uppercase tracking-widest">Cancelar</button>
+            <h2 className="text-xl font-bold mb-2">Confirmar eliminación</h2>
+            <p className="text-gray-500 mb-8">¿Eliminar <strong>{deleteConfirm.name}</strong>?</p>
+            <div className="flex gap-3">
+              <button onClick={() => setDeleteConfirm({ ...deleteConfirm, show: false })} className="flex-1 py-3 bg-slate-100 rounded-xl font-bold">Cancelar</button>
+              <button onClick={executeDeletion} className="flex-1 py-3 bg-red-600 text-white rounded-xl font-bold">Eliminar</button>
             </div>
           </div>
+        </div>
+      )}
+
+      {notification && (
+        <div className="fixed bottom-6 right-6 bg-[#004071] text-white px-6 py-3 rounded-xl shadow-2xl z-[300] border-l-4 border-[#88C13E]">
+          {notification}
         </div>
       )}
     </div>
