@@ -1,51 +1,55 @@
 import { CatalogItem } from '../types.ts';
 
 export const parseCatalogCSV = (csvText: string): CatalogItem[] => {
-    const lines = csvText.split('\n').filter(line => line.trim() !== '');
+    const lines = csvText.split('\n');
     if (lines.length < 2) return [];
 
-    // Skip header, parse the rest
     const items: CatalogItem[] = [];
 
     for (let i = 1; i < lines.length; i++) {
         const line = lines[i].trim();
         if (!line) continue;
 
-        // Simple but robust CSV parser to handle quotes
-        const regex = /"([^"]*)"|([^;]+)/g;
+        // More robust split that handles optional quotes and semicolons
         const parts: string[] = [];
-        let match;
-        while ((match = regex.exec(line)) !== null) {
-            parts.push(match[1] || match[2] || '');
-        }
+        let curStr = '';
+        let inQuotes = false;
 
-        // CSV Columns expected (based on user file): Nombre_Estandar; Diámetro; Peso_kg; Diametro_Pulgadas; Materialidad
-        if (parts.length >= 5) {
-            const name = parts[0].trim();
-            const diameter = parts[1].trim();
-
-            let weightRaw = parts[2].trim();
-            // Handle comma as decimal separator
-            if (weightRaw.includes(',')) {
-                weightRaw = weightRaw.replace(',', '.');
+        for (let j = 0; j < line.length; j++) {
+            const char = line[j];
+            if (char === '"') {
+                inQuotes = !inQuotes;
+            } else if (char === ';' && !inQuotes) {
+                parts.push(curStr);
+                curStr = '';
+            } else {
+                curStr += char;
             }
-            const weight = parseFloat(weightRaw);
+        }
+        parts.push(curStr); // add the last part
+
+        if (parts.length >= 5) {
+            const name = parts[0].trim().replace(/^"|"$/g, '');
+            const diameter = parts[1].trim().replace(/^"|"$/g, '');
+
+            let weightRaw = parts[2].trim().replace(/^"|"$/g, '');
+            if (weightRaw.includes(',')) weightRaw = weightRaw.replace(',', '.');
+
+            const weight = weightRaw ? parseFloat(weightRaw) : 0; // default to 0 if no weight
 
             let diameterInches = parts[3].trim();
-            // Clean up extra quotes from ""1/2""
-            if (diameterInches.startsWith('"') && diameterInches.endsWith('"')) {
-                diameterInches = diameterInches.substring(1, diameterInches.length - 1);
-            }
-            diameterInches = diameterInches.replace(/"+/g, '"').trim();
+            // Clean up extra quotes, it's often saved as """1/2""" or "1/2"
+            diameterInches = diameterInches.replace(/^"+|"+$/g, '').trim();
 
-            const material = parts[4].trim();
+            const material = parts[4].trim().replace(/^"|"$/g, '');
 
-            if (name && !isNaN(weight)) {
+            // Ensure name exists
+            if (name) {
                 items.push({
                     id: `cat_${Date.now()}_${i}`,
                     name,
                     diameter,
-                    weight,
+                    weight: isNaN(weight) ? 0 : weight,
                     diameterInches,
                     material
                 });
