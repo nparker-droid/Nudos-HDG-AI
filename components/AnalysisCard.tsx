@@ -15,6 +15,8 @@ interface AnalysisCardProps {
   credits: number;
   onCopyNode: (node: HydraulicNode) => void;
   onAddNode: (analysisId: string) => void;
+  activeProject?: Project;
+  onExportTable?: (analysisId: string) => void;
   catalogItems: CatalogItem[];
 }
 
