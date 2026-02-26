@@ -870,8 +870,8 @@ const App: React.FC = () => {
           } : a)
         } : c)
       } : p));
-      setDeleteConfirm({ ...deleteConfirm, show: false });
     }
+    setDeleteConfirm({ ...deleteConfirm, show: false });
   }; // Fixed: properly closed executeDeletion
 
   const [targetAnalysisId, setTargetAnalysisId] = useState<string | null>(null);
