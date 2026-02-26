@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { AnalysisResult, HydraulicNode, Piece, NodeMaterial, Project } from '../types.ts';
+import { AnalysisResult, HydraulicNode, Piece, NodeMaterial, Project, CatalogItem } from '../types.ts';
+import { findWeightInCatalog } from '../services/catalogService.ts';
 
 interface ResultDisplayProps {
   analysisId: string;
@@ -16,15 +17,17 @@ interface ResultDisplayProps {
   project?: Project;
   onAddNode: () => void;
   onExportTable?: () => void;
+  catalogItems: CatalogItem[];
 }
 
 interface PieceRowProps {
   piece: Piece;
   onUpdate: (updates: Partial<Piece>) => void;
   onRemove: () => void;
+  catalogItems: CatalogItem[];
 }
 
-const PieceRow: React.FC<PieceRowProps> = ({ piece, onUpdate, onRemove }) => {
+const PieceRow: React.FC<PieceRowProps> = ({ piece, onUpdate, onRemove, catalogItems }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [localWeight, setLocalWeight] = useState(piece.weight !== undefined ? piece.weight.toString().replace('.', ',') : '');
 
@@ -44,6 +47,16 @@ const PieceRow: React.FC<PieceRowProps> = ({ piece, onUpdate, onRemove }) => {
     setLocalWeight(maskedVal);
     const floatVal = parseFloat(maskedVal.replace(',', '.'));
     onUpdate({ weight: isNaN(floatVal) ? 0 : floatVal });
+  };
+
+  const attemptCatalogMatch = () => {
+    if (!piece.name || !piece.diameter || !piece.material) return;
+    const matchWeight = findWeightInCatalog(piece.name, piece.diameter, piece.material, catalogItems);
+    if (matchWeight !== null) {
+      onUpdate({ weight: matchWeight });
+    } else {
+      alert("No se encontró coincidencia exacta en el catálogo para esta pieza.");
+    }
   };
 
   return (
@@ -88,8 +101,15 @@ const PieceRow: React.FC<PieceRowProps> = ({ piece, onUpdate, onRemove }) => {
           className={`bg-transparent border-none text-center font-mono font-black text-[#004071] w-full outline-none placeholder:text-[9px] placeholder:font-normal placeholder:opacity-50 ${!piece.diameter ? 'placeholder:text-amber-500' : ''}`}
         />
       </td>
-      <td className="px-6 py-4 text-center">
+      <td className="px-6 py-4 text-center group/weight relative">
         <input type="text" placeholder="0,00" value={localWeight} onChange={e => handleWeightChange(e.target.value)} className="bg-transparent border-none text-center font-mono text-[11px] text-slate-500 w-16 outline-none" />
+        <button
+          onClick={attemptCatalogMatch}
+          className="absolute -right-4 top-1/2 -translate-y-1/2 opacity-0 group-hover/weight:opacity-100 transition-opacity bg-[#004071] text-[#D9E021] rounded-full w-5 h-5 flex items-center justify-center shadow-lg hover:scale-110"
+          title="Buscar en Catálogo"
+        >
+          <i className="fa-solid fa-book-open text-[8px]"></i>
+        </button>
       </td>
       <td className="px-6 py-4 text-right">
         <div className="flex items-center justify-end gap-4">
@@ -110,9 +130,10 @@ interface NodeCardProps {
   onCopy: () => void;
   isDuplicate: boolean;
   onDelete: () => void;
+  catalogItems: CatalogItem[];
 }
 
-const NodeCard: React.FC<NodeCardProps> = ({ node, index, onUpdate, onRemove, onSave, onCopy, isDuplicate, onDelete }) => {
+const NodeCard: React.FC<NodeCardProps> = ({ node, index, onUpdate, onRemove, onSave, onCopy, isDuplicate, onDelete, catalogItems }) => {
   const [isEditingHeader, setIsEditingHeader] = useState(false);
   const [editedName, setEditedName] = useState(node.nodeName);
   const [editedId, setEditedId] = useState(node.id);
@@ -144,7 +165,17 @@ const NodeCard: React.FC<NodeCardProps> = ({ node, index, onUpdate, onRemove, on
 
   const handleUpdatePiece = (idx: number, updates: Partial<Piece>) => {
     const newPieces = [...node.pieces];
-    newPieces[idx] = { ...newPieces[idx], ...updates };
+    const updatedPiece = { ...newPieces[idx], ...updates };
+
+    // Auto-search weight if a property changed and weight is 0 or wasn't provided directly
+    if (updates.name || updates.diameter || updates.material) {
+      if (!updates.weight) {
+        const matchW = findWeightInCatalog(updatedPiece.name, updatedPiece.diameter, updatedPiece.material, catalogItems);
+        if (matchW !== null) updatedPiece.weight = matchW;
+      }
+    }
+
+    newPieces[idx] = updatedPiece;
     onUpdate({ pieces: newPieces });
   };
 
@@ -254,7 +285,7 @@ const NodeCard: React.FC<NodeCardProps> = ({ node, index, onUpdate, onRemove, on
           </thead>
           <tbody className="divide-y divide-slate-100">
             {node.pieces.map((piece, idx) => (
-              <PieceRow key={idx} piece={piece} onUpdate={u => handleUpdatePiece(idx, u)} onRemove={() => handleRemovePiece(idx)} />
+              <PieceRow key={idx} piece={piece} onUpdate={u => handleUpdatePiece(idx, u)} onRemove={() => handleRemovePiece(idx)} catalogItems={catalogItems} />
             ))}
           </tbody>
         </table>
@@ -263,7 +294,7 @@ const NodeCard: React.FC<NodeCardProps> = ({ node, index, onUpdate, onRemove, on
   );
 };
 
-const ResultDisplay: React.FC<ResultDisplayProps> = ({ analysisId, result, searchTerm, duplicateIds, onUpdateNode, onRemoveNode, onRemoveAnalysis, onSaveToLibrary, onProcess, onCopyNode, isManual, project, onAddNode, onExportTable }) => {
+const ResultDisplay: React.FC<ResultDisplayProps> = ({ analysisId, result, searchTerm, duplicateIds, onUpdateNode, onRemoveNode, onRemoveAnalysis, onSaveToLibrary, onProcess, onCopyNode, isManual, project, onAddNode, onExportTable, catalogItems }) => {
 
   // Explicitly type filteredNodes as HydraulicNode[] to avoid inference issues.
   const filteredNodes = useMemo<HydraulicNode[]>(() => {
@@ -283,9 +314,9 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({ analysisId, result, searc
   const existingPieceNames = useMemo(() => {
     const names = new Set<string>();
     if (project) {
-      project.categories.forEach(c => 
-        c.analyses.forEach(a => 
-          a.result?.nodes.forEach(n => 
+      project.categories.forEach(c =>
+        c.analyses.forEach(a =>
+          a.result?.nodes.forEach(n =>
             n.pieces.forEach(p => {
               if (p.name) names.add(p.name.trim().toUpperCase());
             })
@@ -378,6 +409,7 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({ analysisId, result, searc
               onSave={() => onSaveToLibrary(node)}
               onCopy={() => onCopyNode(node)}
               onDelete={() => onRemoveNode(node.id)}
+              catalogItems={catalogItems}
             />
           );
         })}

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { HydraulicNode, FileAnalysis, Project } from '../types.ts';
+import { HydraulicNode, FileAnalysis, Project, CatalogItem } from '../types.ts';
 import ResultDisplay from './ResultDisplay.tsx';
 
 interface AnalysisCardProps {
@@ -14,9 +14,8 @@ interface AnalysisCardProps {
   duplicateIds: Set<string>;
   credits: number;
   onCopyNode: (node: HydraulicNode) => void;
-  activeProject?: Project;
-  onExportTable?: (analysisId: string) => void;
   onAddNode: (analysisId: string) => void;
+  catalogItems: CatalogItem[];
 }
 
 const AnalysisCard: React.FC<AnalysisCardProps> = ({
@@ -33,7 +32,8 @@ const AnalysisCard: React.FC<AnalysisCardProps> = ({
   onCopyNode,
   activeProject,
   onAddNode,
-  onExportTable
+  onExportTable,
+  catalogItems
 }) => {
   const isManual = !analysis.image;
   const [isEditingName, setIsEditingName] = useState(false);
@@ -166,6 +166,7 @@ const AnalysisCard: React.FC<AnalysisCardProps> = ({
                   onExportTable={() => onExportTable && onExportTable(analysis.id)}
                   isManual={isManual}
                   project={activeProject}
+                  catalogItems={catalogItems}
                 />
               </div>
             )}
