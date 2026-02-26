@@ -5,11 +5,13 @@ import ResultDisplay from './components/ResultDisplay.tsx';
 import Sidebar from './components/Sidebar.tsx';
 import { analyzeHydraulicPlan } from './services/geminiService.ts';
 // Fixed: Added AnalysisResult to the imports from types.ts
-import { Project, FileAnalysis, Category, HydraulicNode, Piece, NodeMaterial, LibraryNode, AnalysisResult } from './types.ts';
+import { Project, FileAnalysis, Category, HydraulicNode, Piece, NodeMaterial, LibraryNode, AnalysisResult, CatalogItem } from './types.ts';
 import AnalysisCard from './components/AnalysisCard.tsx';
 import AddNodeModal from './components/AddNodeModal.tsx';
 import LibraryModal from './components/LibraryModal.tsx';
 import AuditReportModal from './components/AuditReportModal.tsx';
+import CatalogModal from './components/CatalogModal.tsx';
+import { findWeightInCatalog } from './services/catalogService.ts';
 
 const INITIAL_CREDITS = 50;
 
@@ -46,7 +48,14 @@ const SUGGESTED_PRICES: Record<string, number> = {
   'ANCLAJE': 180000
 };
 
-const getEstimatedWeight = (name: string, diameter: string, material: string): number => {
+const getEstimatedWeight = (name: string, diameter: string, material: string, catalogItems?: CatalogItem[]): number => {
+  if (catalogItems && catalogItems.length > 0) {
+    const catalogWeight = findWeightInCatalog(name, diameter, material, catalogItems);
+    if (catalogWeight !== null) {
+      return catalogWeight;
+    }
+  }
+
   const dnMatch = diameter.match(/\d+/);
   const dn = dnMatch ? parseInt(dnMatch[0]) : 100;
   const n = name.toLowerCase();
@@ -72,11 +81,13 @@ const getEstimatedWeight = (name: string, diameter: string, material: string): n
 const App: React.FC = () => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [libraryNodes, setLibraryNodes] = useState<LibraryNode[]>([]);
+  const [catalogItems, setCatalogItems] = useState<CatalogItem[]>([]);
   const [credits, setCredits] = useState<number>(INITIAL_CREDITS);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [activeCategoryId, setActiveCategoryId] = useState<string | null>(null);
   const [showProjectModal, setShowProjectModal] = useState(false);
   const [showLibraryModal, setShowLibraryModal] = useState(false);
+  const [showCatalogModal, setShowCatalogModal] = useState(false);
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [showAddNodeModal, setShowAddNodeModal] = useState(false);
   const [isEditingProject, setIsEditingProject] = useState(false);
@@ -133,17 +144,20 @@ const App: React.FC = () => {
     const savedProjects = localStorage.getItem('hidrogestion_v10_projects');
     const savedLibrary = localStorage.getItem('hidrogestion_v10_library');
     const savedCredits = localStorage.getItem('hidrogestion_v10_credits');
+    const savedCatalog = localStorage.getItem('hidrogestion_v10_catalog');
 
     if (savedProjects) try { setProjects(JSON.parse(savedProjects)); } catch (e) { }
     if (savedLibrary) try { setLibraryNodes(JSON.parse(savedLibrary)); } catch (e) { }
+    if (savedCatalog) try { setCatalogItems(JSON.parse(savedCatalog)); } catch (e) { }
     if (savedCredits !== null) setCredits(parseInt(savedCredits));
   }, []);
 
   useEffect(() => {
-    if (projects.length > 0 || libraryNodes.length > 0) {
+    if (projects.length > 0 || libraryNodes.length > 0 || catalogItems.length > 0) {
       setIsAutoSaving(true);
       localStorage.setItem('hidrogestion_v10_projects', JSON.stringify(projects));
       localStorage.setItem('hidrogestion_v10_library', JSON.stringify(libraryNodes));
+      localStorage.setItem('hidrogestion_v10_catalog', JSON.stringify(catalogItems));
       localStorage.setItem('hidrogestion_v10_credits', credits.toString());
 
       const timer = setTimeout(() => setIsAutoSaving(false), 800);
@@ -394,7 +408,7 @@ const App: React.FC = () => {
     if (e) e.stopPropagation();
     const projectToExport = projects.find(p => p.id === projectId);
     if (!projectToExport) return;
-    
+
     const fileName = `PROYECTO_${projectToExport.name.replace(/\s+/g, '_')}_${projectToExport.code}.json`;
     const jsonString = JSON.stringify(projectToExport, null, 2);
 
@@ -551,7 +565,7 @@ const App: React.FC = () => {
         const normalizedName = p.name ? p.name.trim().toUpperCase() : '';
         const key = `${p.material}|${normalizedName}|${p.union || 'S/U'}|${p.diameter}`;
         if (!pieceDetailsMap.has(key)) {
-          const estimatedW = p.weight || getEstimatedWeight(normalizedName, p.diameter, p.material);
+          const estimatedW = p.weight || getEstimatedWeight(normalizedName, p.diameter, p.material, catalogItems);
           pieceDetailsMap.set(key, {
             name: normalizedName,
             material: p.material,
@@ -1124,7 +1138,7 @@ const App: React.FC = () => {
         onDeleteProject={(pid, e) => { e.stopPropagation(); const p = projects.find(x => x.id === pid); if (p) setDeleteConfirm({ show: true, type: 'project', projectId: pid, name: p.name }); }}
         onExportProject={handleExportProject}
         onOpenLibrary={() => setShowLibraryModal(true)} onAddCategory={handleAddCategory} onEditCategory={handleEditCategory} onRemoveCategory={handleRemoveCategory}
-        onImportProject={handleImportProject} onMoveCategory={handleMoveCategory}
+        onImportProject={handleImportProject} onMoveCategory={handleMoveCategory} onOpenCatalog={() => setShowCatalogModal(true)}
       />
 
       <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className={`fixed top-1/2 -translate-y-1/2 z-40 w-8 h-20 bg-white border border-slate-200 rounded-r-2xl shadow-xl flex items-center justify-center text-[#004071] transition-all duration-300 hover:bg-[#004071] hover:text-white ${isSidebarOpen ? 'left-[320px]' : 'left-0'}`}>

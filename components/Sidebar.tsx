@@ -38,6 +38,7 @@ interface SidebarProps {
   onRemoveCategory: (projectId: string, categoryId: string, e: React.MouseEvent) => void;
   onImportProject: (file: File) => void;
   onMoveCategory: (projectId: string, categoryId: string, direction: 'up' | 'down') => void;
+  onOpenCatalog: () => void;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({
@@ -58,7 +59,8 @@ const Sidebar: React.FC<SidebarProps> = ({
   onEditCategory,
   onRemoveCategory,
   onImportProject,
-  onMoveCategory
+  onMoveCategory,
+  onOpenCatalog
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -71,7 +73,7 @@ const Sidebar: React.FC<SidebarProps> = ({
 
   return (
     <aside className={`bg-white border-r border-slate-200 text-slate-600 flex flex-col shrink-0 shadow-2xl z-30 transition-all duration-300 relative ${isSidebarOpen ? 'w-[320px]' : 'w-0 overflow-hidden'}`}>
-      
+
       <div className="p-6 border-b flex items-center gap-3 bg-white sticky top-0 z-10 whitespace-nowrap">
         <HidrogestionLogo />
         <div className="flex flex-col leading-none">
@@ -82,27 +84,37 @@ const Sidebar: React.FC<SidebarProps> = ({
 
       <div className="p-4 space-y-2 whitespace-nowrap">
         <div className="grid grid-cols-2 gap-2">
-          <button 
-            onClick={onOpenNewProject} 
+          <button
+            onClick={onOpenNewProject}
             className="bg-[#004071] hover:bg-[#002D50] text-white py-4 rounded-2xl flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest transition-all shadow-xl active:scale-95"
           >
             <i className="fa-solid fa-plus"></i> Nuevo
           </button>
-          <button 
-            onClick={() => fileInputRef.current?.click()} 
+          <button
+            onClick={() => fileInputRef.current?.click()}
             className="bg-slate-100 hover:bg-slate-200 text-[#004071] py-4 rounded-2xl flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 border border-slate-200"
           >
             <i className="fa-solid fa-file-import"></i> Importar
           </button>
           <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept=".json" />
         </div>
-        
-        <button 
-          onClick={onOpenLibrary} 
-          className="w-full bg-[#88C13E] hover:bg-[#a6bf2e] text-white py-3 rounded-2xl flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest transition-all shadow-lg active:scale-95"
-        >
-          <i className="fa-solid fa-book-bookmark text-xs"></i> Biblioteca Estándar
-        </button>
+
+        <div className="grid grid-cols-2 gap-2 mt-2">
+          <button
+            onClick={onOpenLibrary}
+            className="w-full bg-[#88C13E] hover:bg-[#a6bf2e] text-white py-3 rounded-xl flex items-center justify-center gap-2 text-[9px] font-black uppercase tracking-widest transition-all shadow-md active:scale-95"
+            title="Biblioteca de Nudos Estándar"
+          >
+            <i className="fa-solid fa-book-bookmark text-xs"></i> Biblioteca Nudos
+          </button>
+          <button
+            onClick={onOpenCatalog}
+            className="w-full bg-[#004071] hover:bg-[#002D50] text-white py-3 rounded-xl flex items-center justify-center gap-2 text-[9px] font-black uppercase tracking-widest transition-all shadow-md active:scale-95 border border-transparent"
+            title="Catálogo de Materiales y Pesos"
+          >
+            <i className="fa-solid fa-book-open text-[#88C13E] text-xs"></i> Catálogo Piezas
+          </button>
+        </div>
       </div>
 
       <div className="flex-grow px-4 py-4 overflow-y-auto space-y-4">
@@ -112,8 +124,8 @@ const Sidebar: React.FC<SidebarProps> = ({
         )}
         {projects.map(p => (
           <div key={p.id} className="group/project">
-            <div 
-              onClick={() => onToggleProject(p.id)} 
+            <div
+              onClick={() => onToggleProject(p.id)}
               className={`flex items-center justify-between p-4 rounded-2xl cursor-pointer transition-all ${activeProjectId === p.id ? 'bg-[#004071] text-white shadow-lg' : 'hover:bg-slate-50 text-slate-600'}`}
             >
               <div className="flex items-center gap-3 overflow-hidden">
@@ -133,9 +145,9 @@ const Sidebar: React.FC<SidebarProps> = ({
             {activeProjectId === p.id && (
               <div className="ml-5 mt-2 space-y-1 animate-in slide-in-from-left-2 duration-300">
                 {(p.categories || []).map((cat, idx) => (
-                  <div 
-                    key={cat.id} 
-                    onClick={() => onSelectCategory(cat.id)} 
+                  <div
+                    key={cat.id}
+                    onClick={() => onSelectCategory(cat.id)}
                     className={`group/cat flex items-center justify-between p-3 rounded-xl cursor-pointer text-[11px] font-bold uppercase tracking-tight transition-all ${activeCategoryId === cat.id ? 'bg-[#88C13E] text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
                   >
                     <div className="flex items-center gap-2 truncate">
@@ -153,8 +165,8 @@ const Sidebar: React.FC<SidebarProps> = ({
                     </div>
                   </div>
                 ))}
-                <button 
-                  onClick={() => onAddCategory(p.id)} 
+                <button
+                  onClick={() => onAddCategory(p.id)}
                   className="w-full text-left p-2.5 text-[10px] text-[#004071] hover:bg-slate-100 rounded-xl flex items-center gap-2 font-black uppercase tracking-widest transition-all border border-dashed border-[#004071]/20 mt-2"
                 >
                   <i className="fa-solid fa-plus"></i> Nuevo Capítulo
