@@ -1561,6 +1561,16 @@ const App: React.FC = () => {
           />
         )}
       </main>
+
+      <CatalogModal
+        isOpen={showCatalogModal}
+        onClose={() => setShowCatalogModal(false)}
+        catalogItems={catalogItems}
+        onUpdateCatalog={(items) => {
+          setCatalogItems(items);
+          setNotification('Catálogo de piezas actualizado exitosamente');
+        }}
+      />
     </div>
   );
 };
