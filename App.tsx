@@ -201,7 +201,8 @@ const App: React.FC = () => {
       Corte: new Set(),
       Ventosa: new Set(),
       Desague: new Set(),
-      Reductora: new Set()
+      Reductora: new Set(),
+      Grifo: new Set()
     };
 
     chapterNodes.forEach(node => {
@@ -275,6 +276,7 @@ const App: React.FC = () => {
       'Ventosa': 'V',
       'Desague': 'D',
       'Reductora': 'R',
+      'Grifo': 'G',
       'Numerico': ''
     };
     return prefixMap[type] || '';
@@ -286,6 +288,7 @@ const App: React.FC = () => {
       'Ventosa': 'Cámaras de Ventosa',
       'Desague': 'Cámaras de Desagüe',
       'Reductora': 'Válvulas Reductoras',
+      'Grifo': 'Cámaras de Grifo',
       'Numerico': 'Nudos Numéricos'
     };
     return labelMap[type] || type;
@@ -565,17 +568,20 @@ const App: React.FC = () => {
         const normalizedName = p.name ? p.name.trim().toUpperCase() : '';
         const key = `${p.material}|${normalizedName}|${p.union || 'S/U'}|${p.diameter}`;
         if (!pieceDetailsMap.has(key)) {
-          const estimatedW = p.weight || getEstimatedWeight(normalizedName, p.diameter, p.material, catalogItems);
+          const weightValue = (p.weight !== undefined && p.weight !== null) ? p.weight : getEstimatedWeight(normalizedName, p.diameter, p.material, catalogItems);
           pieceDetailsMap.set(key, {
             name: normalizedName,
             material: p.material,
             diameter: p.diameter,
             union: p.union || 'S/U',
-            weight: estimatedW
+            weight: weightValue
           });
         } else {
           const current = pieceDetailsMap.get(key)!;
-          if (p.weight && (current.weight === 0 || current.weight !== p.weight)) {
+          // Only update if current is 0 or undefined, but respect if it was set to 0 explicitly later? 
+          // Actually if we find another node with the same key but a real weight, we might want it.
+          // However, the user says "respect 0".
+          if (p.weight !== undefined && p.weight !== null && p.weight !== current.weight) {
             current.weight = p.weight;
           }
         }

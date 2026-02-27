@@ -226,6 +226,7 @@ const NodeCard: React.FC<NodeCardProps> = ({ node, index, onUpdate, onRemove, on
       'Ventosa': 'V',
       'Desague': 'D',
       'Reductora': 'R',
+      'Grifo': 'G',
       'Numerico': ''
     };
 
