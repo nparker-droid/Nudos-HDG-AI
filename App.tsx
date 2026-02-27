@@ -163,7 +163,7 @@ const App: React.FC = () => {
       const timer = setTimeout(() => setIsAutoSaving(false), 800);
       return () => clearTimeout(timer);
     }
-  }, [projects, libraryNodes, credits]);
+  }, [projects, libraryNodes, credits, catalogItems]);
 
   const activeProject = useMemo(() => projects.find(p => p.id === activeProjectId), [projects, activeProjectId]);
   const activeCategory = useMemo(() => activeProject?.categories.find(c => c.id === activeCategoryId), [activeProject, activeCategoryId]);
@@ -1341,25 +1341,31 @@ const App: React.FC = () => {
                       </div>
                     )}
 
-                    {activeCategory?.analyses.map((analysis, index) => (
-                      <AnalysisCard
-                        key={analysis.id}
-                        analysis={{ ...analysis, documentNumber: index + 1 }} // Assign index here
-                        onProcess={processAnalysis}
-                        onRemove={removeAnalysis}
-                        onUpdateAnalysisName={handleUpdateAnalysisName}
-                        onUpdateNode={handleUpdateNode}
-                        onRemoveNode={handleRemoveNode}
-                        onSaveToLibrary={handleSaveToLibrary}
-                        onAddNode={handleRequestAddNode}
-                        searchTerm={searchTerm}
-                        duplicateIds={chapterDuplicateIds}
-                        credits={credits}
-                        onCopyNode={handleCopyNode}
-                        activeProject={activeProject}
-                        onExportTable={handleExportAnalysisTable}
-                      />
-                    ))}
+                    {activeCategory?.analyses.map((analysis, index) => {
+                      if (index === 0) {
+                        console.log("💎 [App.tsx] Pasando catalogItems a AnalysisCard:", catalogItems?.length || 0);
+                      }
+                      return (
+                        <AnalysisCard
+                          key={analysis.id}
+                          analysis={{ ...analysis, documentNumber: index + 1 }}
+                          onProcess={processAnalysis}
+                          onRemove={removeAnalysis}
+                          onUpdateAnalysisName={handleUpdateAnalysisName}
+                          onUpdateNode={handleUpdateNode}
+                          onRemoveNode={handleRemoveNode}
+                          onSaveToLibrary={handleSaveToLibrary}
+                          onAddNode={handleRequestAddNode}
+                          searchTerm={searchTerm}
+                          duplicateIds={chapterDuplicateIds}
+                          credits={credits}
+                          onCopyNode={handleCopyNode}
+                          activeProject={activeProject}
+                          onExportTable={handleExportAnalysisTable}
+                          catalogItems={catalogItems}
+                        />
+                      );
+                    })}
                     <div className="pt-10 border-t border-slate-200 flex flex-col items-center">
                       <FileUploader onImagesSelected={handleImagesSelected} loading={false} />
                     </div>

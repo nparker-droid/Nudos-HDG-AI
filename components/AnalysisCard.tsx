@@ -43,6 +43,8 @@ const AnalysisCard: React.FC<AnalysisCardProps> = ({
 
   const [isCollapsed, setIsCollapsed] = useState(false);
 
+  console.log("💎 [AnalysisCard.tsx] Recibiendo catalogItems:", catalogItems?.length || 0);
+
   const handleSaveName = () => {
     onUpdateAnalysisName(analysis.id, tempName);
     setIsEditingName(false);

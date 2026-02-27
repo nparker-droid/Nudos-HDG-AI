@@ -316,6 +316,8 @@ const NodeCard: React.FC<NodeCardProps> = ({ node, index, onUpdate, onRemove, on
 
 const ResultDisplay: React.FC<ResultDisplayProps> = ({ analysisId, result, searchTerm, duplicateIds, onUpdateNode, onRemoveNode, onRemoveAnalysis, onSaveToLibrary, onProcess, onCopyNode, isManual, project, onAddNode, onExportTable, catalogItems }) => {
 
+  console.log("💎 [ResultDisplay.tsx] Recibiendo catalogItems:", catalogItems?.length || 0);
+
   // Explicitly type filteredNodes as HydraulicNode[] to avoid inference issues.
   const filteredNodes = useMemo<HydraulicNode[]>(() => {
     let nodes = [...result.nodes];
