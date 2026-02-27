@@ -30,7 +30,7 @@ export interface Piece {
 export interface HydraulicNode {
   id: string;
   nodeName: string;
-  type: 'Numerico' | 'Ventosa' | 'Desague' | 'Corte' | 'Reductora';
+  type: 'Numerico' | 'Ventosa' | 'Desague' | 'Corte' | 'Reductora' | 'Grifo';
   pieces: Piece[];
   anchorageCount: number;
   sourceGroupings?: string[];
