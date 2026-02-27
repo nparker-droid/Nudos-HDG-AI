@@ -63,4 +63,3 @@ export interface Project {
   region: string;
   categories: Category[];
 }
-e

@@ -80,73 +80,89 @@ export const findWeightInCatalog = (
     const nName = normalizeText(pieceName);
     const nMat = normalizeText(pieceMaterial);
 
-    // Clean diameter from things like "mm" or extra spaces
-    let pDiam = pieceDiameter.trim().toUpperCase()
-        .replace('MM', '')
+    // 1. Normalize Search Diameter
+    let pDiamValue = pieceDiameter.trim().toUpperCase()
+        .replace(/MM/g, '')
+        .replace(/"/g, '')
+        .replace(/PULG/g, '')
+        .replace(/INCH/g, '')
+        .replace(/'/g, '')
         .trim();
 
-    const isInch = pDiam.includes('"') || pDiam.includes('PULG') || pDiam.includes('INCH') || pDiam.includes('/');
+    const isInputInch = pieceDiameter.includes('"') || pieceDiameter.toUpperCase().includes('PULG') || pieceDiameter.toUpperCase().includes('INCH') || pieceDiameter.includes('/');
 
-    // Exact match string for searching within the diameter fields
-    if (isInch) {
-        pDiam = pDiam.replace('PULG', '').replace('INCHES', '').replace('INCH', '').trim();
-        if (!pDiam.includes('"')) {
-            // if they wrote "1/2" we assume they mean inches based on isInch logic, add quote
-            pDiam += '"';
+    const mmToInches: Record<string, string> = {
+        '20': '1/2"', '25': '3/4"', '32': '1"', '40': '1 1/4"', '50': '1 1/2"',
+        '63': '2"', '75': '2 1/2"', '90': '3"', '110': '4"', '125': '5"',
+        '140': '5"', '160': '6"', '180': '7"', '200': '8"', '225': '9"',
+        '250': '10"', '280': '11"', '315': '12"', '355': '14"', '400': '16"'
+    };
+
+    const inchesToMm: Record<string, string> = {
+        '1/2': '20', '3/4': '25', '1': '32', '1 1/4': '40', '1 1/2': '50',
+        '2': '63', '2 1/2': '75', '3': '90', '4': '110', '5': '140',
+        '6': '160', '8': '200', '10': '250', '12': '315', '14': '355', '16': '400',
+        '24': '600'
+    };
+
+    // 2. Initial Filter by Material (Flexible)
+    let candidates = catalogItems.filter(item => {
+        const iMat = normalizeText(item.material);
+        // Direct match or common aliases
+        if (iMat === nMat || nMat === iMat) return true;
+        if ((iMat === 'HDPE' && nMat === 'PEAD') || (iMat === 'PEAD' && nMat === 'HDPE')) return true;
+        if (nMat === 'OTRO') return true; // Allow everything if piece is "Otro"
+        return iMat.includes(nMat) || nMat.includes(iMat);
+    });
+
+    if (candidates.length === 0) candidates = catalogItems; // Fallback to full catalog if no material match
+
+    // 3. Diameter Matching
+    const findByDiameter = (items: CatalogItem[], val: string, isInch: boolean) => {
+        return items.filter(item => {
+            const iMm = item.diameter.trim();
+            const iInch = item.diameterInches.replace(/"/g, '').trim();
+            const searchVal = val.replace(/"/g, '').trim();
+
+            if (isInch) {
+                return iInch === searchVal || iInch.startsWith(searchVal) || searchVal.startsWith(iInch);
+            } else {
+                return iMm === searchVal;
+            }
+        });
+    };
+
+    let diameterMatches = findByDiameter(candidates, pDiamValue, isInputInch);
+
+    // Try conversion if no radial match
+    if (diameterMatches.length === 0) {
+        if (!isInputInch && mmToInches[pDiamValue]) {
+            diameterMatches = findByDiameter(candidates, mmToInches[pDiamValue], true);
+        } else if (isInputInch && inchesToMm[pDiamValue]) {
+            diameterMatches = findByDiameter(candidates, inchesToMm[pDiamValue], false);
         }
     }
 
-    // Filter by material first (allow partial matches if the catalog material is contained in piece, or viceversa)
-    const filteredByMaterial = catalogItems.filter(item => {
-        const iMat = normalizeText(item.material);
-        return iMat.includes(nMat) || nMat.includes(iMat) ||
-            (iMat === 'HDPE' && nMat === 'PEAD') ||
-            (iMat === 'PEAD' && nMat === 'HDPE');
-    });
+    if (diameterMatches.length > 0) candidates = diameterMatches;
 
-    if (filteredByMaterial.length === 0) return null;
-
-    // Filter by diameter
-    const filteredByDiameter = filteredByMaterial.filter(item => {
-        if (isInch) {
-            // match against diameterInches Exact match or close
-            return item.diameterInches.toUpperCase() === pDiam ||
-                item.diameterInches.toUpperCase().includes(pDiam) ||
-                pDiam.includes(item.diameterInches.toUpperCase());
-        } else {
-            // match against mm exact match
-            return item.diameter === pDiam;
-        }
-    });
-
-    const candidates = filteredByDiameter.length > 0 ? filteredByDiameter : filteredByMaterial;
-
-    // Let's find the best name match. Simple token overlap technique.
-    // User pieces are often short (e.g. "CODO 90°"), while catalog is long ("Codo 90° Inyectado HDPE 75mm").
-    // We will build a combined search string from the user's piece to increase match probability.
-    const searchString = `${nName} ${nMat} ${pDiam}`.replace(/°/g, '');
-    const searchTokens = searchString.split(/\s+/).filter(t => t.length > 0);
+    // 4. Name Similarity Scoring
+    const searchString = `${nName} ${nMat} ${pDiamValue}`.replace(/°/g, '');
+    const searchTokens = searchString.split(/\s+/).filter(t => t.length > 1); // Ignore single chars
 
     let bestMatch: CatalogItem | null = null;
     let maxScore = -1;
 
     for (const item of candidates) {
-        // Normalize catalog item name and remove degree symbols for fairer comparison
-        const iNameTokens = normalizeText(item.name).replace(/°/g, '').split(/\s+/).filter(t => t.length > 0);
+        const iNameNormalized = normalizeText(item.name).replace(/°/g, '');
+        const iTokens = iNameNormalized.split(/\s+/).filter(t => t.length > 1);
+
         let score = 0;
-
-        // Check token intersection from our combined search string against the catalog item's name
         for (const sTok of searchTokens) {
-            // we use includes instead of exact match to catch "75MM" matching "75"
-            if (iNameTokens.some(iTok => iTok.includes(sTok) || sTok.includes(iTok))) {
-                score++;
+            if (iTokens.some(iTok => iTok.includes(sTok) || sTok.includes(iTok))) {
+                score += 1;
+                // Extra weight for exact token match
+                if (iTokens.includes(sTok)) score += 0.5;
             }
-        }
-
-        // Give a little bonus if the exact name token is found
-        const exactNameTokens = nName.replace(/°/g, '').split(/\s+/).filter(t => t.length > 0);
-        for (const nTok of exactNameTokens) {
-            if (iNameTokens.includes(nTok)) score += 0.5;
         }
 
         if (score > maxScore) {
@@ -155,9 +171,8 @@ export const findWeightInCatalog = (
         }
     }
 
-    // Require at least some overlap in the name to return a valid weight 
-    // (a score > 1 implies it matched more than just the material or just the diameter)
-    if (bestMatch && maxScore > 1) {
+    // Min score threshold
+    if (bestMatch && maxScore >= 1) {
         return bestMatch.weight;
     }
 

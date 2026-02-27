@@ -50,8 +50,16 @@ const PieceRow: React.FC<PieceRowProps> = ({ piece, onUpdate, onRemove, catalogI
   };
 
   const attemptCatalogMatch = () => {
+    console.log("🔍 Iniciando búsqueda en catálogo...");
+    console.log("📦 Cantidad de items en catálogo:", catalogItems?.length || 0);
+    console.log("🧩 Datos de la pieza:", {
+      name: piece.name,
+      diameter: piece.diameter,
+      material: piece.material
+    });
+
     if (!catalogItems || catalogItems.length === 0) {
-      alert("⚠️ Tu catálogo está vacío. Por favor abre el Catálogo de Piezas y vuelve a Importar tu archivo CSV.");
+      alert("⚠️ Tu catálogo está vacío o no se ha cargado correctamente.\n\nPor favor, abre el Catálogo de Piezas, presiona VACIAR CATÁLOGO y vuelve a IMPORTAR tu archivo CSV para asegurar que los datos estén frescos.");
       return;
     }
 
@@ -61,10 +69,13 @@ const PieceRow: React.FC<PieceRowProps> = ({ piece, onUpdate, onRemove, catalogI
     }
 
     const matchWeight = findWeightInCatalog(piece.name, piece.diameter, piece.material, catalogItems);
+
     if (matchWeight !== null) {
+      console.log("✅ Match encontrado! Peso:", matchWeight);
       onUpdate({ weight: matchWeight });
     } else {
-      alert(`No se encontró el peso para:\n"${piece.name} ${piece.material} ${piece.diameter}"\n\nAsegúrate de que exista una pieza similar en tu Catálogo (actualmente tiene ${catalogItems.length} ítems).`);
+      console.warn("❌ No se encontró coincidencia exacta.");
+      alert(`No se encontró el peso exacto en el catálogo para:\n"${piece.name} ${piece.material} ${piece.diameter}"\n\nTips:\n1. Revisa que el nombre en el catálogo sea similar.\n2. El catálogo actualmente tiene ${catalogItems.length} ítems.\n3. Intenta escribir el diámetro de otra forma (ej. si pusiste 75mm, prueba con 2 1/2").`);
     }
   };
 
