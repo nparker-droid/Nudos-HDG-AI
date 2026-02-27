@@ -443,4 +443,3 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({ analysisId, result, searc
 
 export default ResultDisplay;
 
-
