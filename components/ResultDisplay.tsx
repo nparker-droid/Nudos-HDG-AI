@@ -279,9 +279,9 @@ const NodeCard: React.FC<NodeCardProps> = ({ node, index, onUpdate, onRemove, on
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={onSave} className="px-4 py-2 bg-slate-100 text-[#004071] rounded-xl text-[9px] font-black uppercase hover:bg-slate-200 transition-all" title="Guardar en Biblioteca"><i className="fa-solid fa-bookmark mr-2"></i>Biblioteca</button>
-          <button onClick={onCopy} className="px-4 py-2 bg-slate-100 text-[#004071] rounded-xl text-[9px] font-black uppercase hover:bg-slate-200 transition-all" title="Copiar Nudo"><i className="fa-solid fa-copy mr-2"></i>Copiar</button>
-          <button onClick={onDelete} className="px-4 py-2 bg-red-50 text-red-600 rounded-xl text-[9px] font-black uppercase hover:bg-red-100 transition-all" title="Eliminar Nudo"><i className="fa-solid fa-trash mr-2"></i>Eliminar</button>
+          <button onClick={onSave} className="w-9 h-9 bg-slate-100 text-[#004071] rounded-xl hover:bg-slate-200 transition-all" title="Guardar en biblioteca"><i className="fa-solid fa-bookmark text-[11px]"></i></button>
+          <button onClick={onCopy} className="w-9 h-9 bg-slate-100 text-[#004071] rounded-xl hover:bg-slate-200 transition-all" title="Copiar nudo"><i className="fa-solid fa-copy text-[11px]"></i></button>
+          <button onClick={onDelete} className="w-9 h-9 bg-red-50 text-red-600 rounded-xl hover:bg-red-100 transition-all" title="Eliminar nudo"><i className="fa-solid fa-trash text-[11px]"></i></button>
           <button onClick={handleAddPiece} className="px-4 py-2 bg-[#88C13E] text-white rounded-xl text-[9px] font-black uppercase hover:shadow-lg transition-all"><i className="fa-solid fa-plus mr-2"></i>Pieza</button>
         </div>
       </div>

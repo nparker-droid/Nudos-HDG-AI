@@ -50,7 +50,9 @@ const getUnionBreakdown = (piece: Piece, project: Project) => {
     byDiameter.set(key, (byDiameter.get(key) || 0) + count);
   };
 
-  if (name.includes('TEE')) {
+  if (name.includes('STUB') || name.includes('COPLA')) {
+    add(diameters[0] || fallbackDiameter, typeof piece.unionCount === 'number' ? piece.unionCount : 1);
+  } else if (name.includes('TEE')) {
     if (diameters.length >= 3) diameters.slice(0, 3).forEach(d => add(d, 1));
     else if (diameters.length >= 2) {
       add(diameters[0], 2);
@@ -181,6 +183,12 @@ const buildMatrix = (project: Project, sourceNodes: ReviewNode[]) => {
   return { columns, totals, grandTotalPieces, totalAnchorages, duplicateKeys, quantityFor };
 };
 
+const materialBlockClass = (columns: SummaryColumn[], index: number, col: SummaryColumn) => {
+  const startsBlock = index === 0 || columns[index - 1].category !== col.category;
+  const unionTone = col.category === 'UNIONES' ? 'bg-blue-50/80' : '';
+  return `${startsBlock ? 'border-l-4 border-l-[#004071]' : 'border-l border-l-slate-100'} ${unionTone}`;
+};
+
 const ProjectReviewModal: React.FC<ProjectReviewModalProps> = ({ project }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState<'id' | 'name' | 'category' | 'document' | 'alerts'>('id');
@@ -226,41 +234,41 @@ const ProjectReviewModal: React.FC<ProjectReviewModalProps> = ({ project }) => {
           <table className="min-w-[1400px] w-max text-left border-collapse text-xs">
             <thead className="sticky top-0 z-10 bg-white shadow-sm">
               <tr className="bg-[#004071] text-white uppercase text-[9px] tracking-widest">
-                <th className="sticky left-0 z-20 bg-[#004071] px-4 py-3 min-w-[120px]">ID Nudo</th>
-                <th className="sticky left-[120px] z-20 bg-[#004071] px-4 py-3 min-w-[220px]">Nombre Nudo</th>
+                <th className="sticky left-0 z-30 bg-[#004071] px-4 py-3 w-[140px] min-w-[140px] max-w-[140px]">ID Nudo</th>
+                <th className="sticky left-[140px] z-30 bg-[#004071] px-4 py-3 w-[260px] min-w-[260px] max-w-[260px] shadow-[8px_0_12px_-10px_rgba(15,23,42,0.8)]">Nombre Nudo</th>
                 <th className="px-3 py-3 min-w-[130px]">Capitulo</th>
                 <th className="px-3 py-3 min-w-[130px]">Documento</th>
-                {matrix.columns.map(col => <th key={`cat-${title}-${col.key}`} className="px-3 py-3 min-w-[105px] text-center">{col.category}</th>)}
+                {matrix.columns.map((col, colIndex) => <th key={`cat-${title}-${col.key}`} className={`px-3 py-3 min-w-[105px] text-center ${materialBlockClass(matrix.columns, colIndex, col)}`}>{col.category}</th>)}
                 <th className="px-3 py-3 min-w-[90px] text-center">TOTAL</th>
                 <th className="px-3 py-3 min-w-[90px] text-center">ANCLAJE</th>
                 <th className="px-3 py-3 min-w-[150px]">ALERTAS</th>
               </tr>
               <tr className="bg-slate-50 text-[#004071] uppercase text-[9px] font-black">
-                <th className="sticky left-0 z-20 bg-slate-50 px-4 py-2"></th>
-                <th className="sticky left-[120px] z-20 bg-slate-50 px-4 py-2"></th>
+                <th className="sticky left-0 z-30 bg-slate-50 px-4 py-2 w-[140px] min-w-[140px] max-w-[140px]"></th>
+                <th className="sticky left-[140px] z-30 bg-slate-50 px-4 py-2 w-[260px] min-w-[260px] max-w-[260px] shadow-[8px_0_12px_-10px_rgba(15,23,42,0.35)]"></th>
                 <th></th>
                 <th></th>
-                {matrix.columns.map(col => <th key={`name-${title}-${col.key}`} className="px-3 py-2 text-center">{col.name}</th>)}
+                {matrix.columns.map((col, colIndex) => <th key={`name-${title}-${col.key}`} className={`px-3 py-2 text-center ${materialBlockClass(matrix.columns, colIndex, col)}`}>{col.name}</th>)}
                 <th></th>
                 <th></th>
                 <th></th>
               </tr>
               <tr className="bg-slate-100 text-slate-500 uppercase text-[9px] font-black">
-                <th className="sticky left-0 z-20 bg-slate-100 px-4 py-2"></th>
-                <th className="sticky left-[120px] z-20 bg-slate-100 px-4 py-2"></th>
+                <th className="sticky left-0 z-30 bg-slate-100 px-4 py-2 w-[140px] min-w-[140px] max-w-[140px]"></th>
+                <th className="sticky left-[140px] z-30 bg-slate-100 px-4 py-2 w-[260px] min-w-[260px] max-w-[260px] shadow-[8px_0_12px_-10px_rgba(15,23,42,0.35)]"></th>
                 <th></th>
                 <th></th>
-                {matrix.columns.map(col => <th key={`diam-${title}-${col.key}`} className="px-3 py-2 text-center">{col.diameter}</th>)}
+                {matrix.columns.map((col, colIndex) => <th key={`diam-${title}-${col.key}`} className={`px-3 py-2 text-center ${materialBlockClass(matrix.columns, colIndex, col)}`}>{col.diameter}</th>)}
                 <th></th>
                 <th></th>
                 <th></th>
               </tr>
               <tr className="bg-white text-slate-400 uppercase text-[9px] font-black border-b">
-                <th className="sticky left-0 z-20 bg-white px-4 py-2"></th>
-                <th className="sticky left-[120px] z-20 bg-white px-4 py-2"></th>
+                <th className="sticky left-0 z-30 bg-white px-4 py-2 w-[140px] min-w-[140px] max-w-[140px]"></th>
+                <th className="sticky left-[140px] z-30 bg-white px-4 py-2 w-[260px] min-w-[260px] max-w-[260px] shadow-[8px_0_12px_-10px_rgba(15,23,42,0.35)]"></th>
                 <th></th>
                 <th></th>
-                {matrix.columns.map(col => <th key={`mec-${title}-${col.key}`} className="px-3 py-2 text-center">{col.mechanismGroup}</th>)}
+                {matrix.columns.map((col, colIndex) => <th key={`mec-${title}-${col.key}`} className={`px-3 py-2 text-center ${materialBlockClass(matrix.columns, colIndex, col)}`}>{col.mechanismGroup}</th>)}
                 <th></th>
                 <th></th>
                 <th></th>
@@ -277,14 +285,14 @@ const ProjectReviewModal: React.FC<ProjectReviewModalProps> = ({ project }) => {
                 let rowTotal = 0;
                 return (
                   <tr key={`${title}-${node.id}-${index}`} className={duplicate || incomplete ? 'bg-amber-50/60' : 'hover:bg-slate-50'}>
-                    <td className="sticky left-0 bg-inherit px-4 py-3 font-black text-[#88C13E] min-w-[120px]">{node.id}</td>
-                    <td className="sticky left-[120px] bg-inherit px-4 py-3 font-bold text-[#004071] min-w-[220px]">{node.nodeName}</td>
+                    <td className="sticky left-0 z-20 bg-inherit px-4 py-3 font-black text-[#88C13E] w-[140px] min-w-[140px] max-w-[140px] truncate" title={node.id}>{node.id}</td>
+                    <td className="sticky left-[140px] z-20 bg-inherit px-4 py-3 font-bold text-[#004071] w-[260px] min-w-[260px] max-w-[260px] truncate shadow-[8px_0_12px_-10px_rgba(15,23,42,0.35)]" title={node.nodeName}>{node.nodeName}</td>
                     <td className="px-3 py-3">{node.categoryName}</td>
                     <td className="px-3 py-3">{node.documentName}</td>
-                    {matrix.columns.map(col => {
+                    {matrix.columns.map((col, colIndex) => {
                       const qty = matrix.quantityFor(node, col);
                       if (!col.isUnion) rowTotal += qty;
-                      return <td key={`${title}-${node.id}-${col.key}`} className={`px-3 py-3 text-center font-black ${col.isUnion ? 'text-blue-700 bg-blue-50/40' : 'text-slate-700'}`}>{qty || ''}</td>;
+                      return <td key={`${title}-${node.id}-${col.key}`} className={`px-3 py-3 text-center font-black ${materialBlockClass(matrix.columns, colIndex, col)} ${col.isUnion ? 'text-blue-700' : 'text-slate-700'}`}>{qty || ''}</td>;
                     })}
                     <td className="px-3 py-3 text-center font-black text-[#004071]">{rowTotal || ''}</td>
                     <td className="px-3 py-3 text-center font-black text-slate-600">{node.anchorageCount || ''}</td>
@@ -294,11 +302,11 @@ const ProjectReviewModal: React.FC<ProjectReviewModalProps> = ({ project }) => {
               })}
               {nodes.length > 0 && (
                 <tr className="bg-[#004071] text-white font-black uppercase">
-                  <td className="sticky left-0 bg-[#004071] px-4 py-3">Cantidad Total</td>
-                  <td className="sticky left-[120px] bg-[#004071] px-4 py-3"></td>
+                  <td className="sticky left-0 bg-[#004071] px-4 py-3 w-[140px] min-w-[140px] max-w-[140px]">Cantidad Total</td>
+                  <td className="sticky left-[140px] bg-[#004071] px-4 py-3 w-[260px] min-w-[260px] max-w-[260px] shadow-[8px_0_12px_-10px_rgba(15,23,42,0.8)]"></td>
                   <td></td>
                   <td></td>
-                  {matrix.columns.map(col => <td key={`total-${title}-${col.key}`} className="px-3 py-3 text-center">{matrix.totals.get(col.key) || ''}</td>)}
+                  {matrix.columns.map((col, colIndex) => <td key={`total-${title}-${col.key}`} className={`px-3 py-3 text-center ${materialBlockClass(matrix.columns, colIndex, col)}`}>{matrix.totals.get(col.key) || ''}</td>)}
                   <td className="px-3 py-3 text-center">{matrix.grandTotalPieces}</td>
                   <td className="px-3 py-3 text-center">{matrix.totalAnchorages}</td>
                   <td></td>

@@ -12,6 +12,7 @@ import LibraryModal from './components/LibraryModal.tsx';
 import AuditReportModal from './components/AuditReportModal.tsx';
 import CatalogModal from './components/CatalogModal.tsx';
 import ProjectReviewModal from './components/ProjectReviewModal.tsx';
+import HelpModal from './components/HelpModal.tsx';
 import { findWeightInCatalog } from './services/catalogService.ts';
 
 const INITIAL_CREDITS = 50;
@@ -130,7 +131,9 @@ const getUnionBreakdownForPiece = (piece: Piece, project?: Project) => {
   };
 
   const byDiameter = new Map<string, number>();
-  if (name.includes('TEE')) {
+  if (name.includes('STUB') || name.includes('COPLA')) {
+    add(byDiameter, diameters[0] || fallbackDiameter, typeof piece.unionCount === 'number' ? piece.unionCount : 1);
+  } else if (name.includes('TEE')) {
     if (diameters.length >= 3) {
       diameters.slice(0, 3).forEach(d => add(byDiameter, d, 1));
     } else if (diameters.length >= 2) {
@@ -212,6 +215,7 @@ const App: React.FC = () => {
   const [isAutoSaving, setIsAutoSaving] = useState(false);
   const [showAuditReportModal, setShowAuditReportModal] = useState(false);
   const [showProjectReviewModal, setShowProjectReviewModal] = useState(false);
+  const [showHelpModal, setShowHelpModal] = useState(false);
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({
     audit: false,
     schemes: false,
@@ -1352,6 +1356,9 @@ const App: React.FC = () => {
                   <input type="text" placeholder="Buscar nudo..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-12 pr-6 py-3 bg-slate-50 border border-slate-100 rounded-2xl text-[11px] font-bold text-[#004071] w-64 focus:bg-white focus:border-[#88C13E] outline-none" />
                 </div>
                 <div className="flex items-center gap-2">
+                  <button onClick={() => setShowHelpModal(true)} className="w-11 h-11 bg-white border border-slate-200 text-[#004071] rounded-2xl shadow-sm hover:bg-[#004071] hover:text-white transition-all" title="Ayuda e informacion">
+                    <i className="fa-solid fa-circle-info text-sm"></i>
+                  </button>
                   <button onClick={() => setShowSaveModal(true)} className="px-6 py-3 bg-[#004071] text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg flex items-center gap-2 hover:bg-[#002D50] transition-all">
                     <i className="fa-solid fa-cloud-arrow-up text-xs"></i> Guardar
                   </button>
@@ -1779,6 +1786,7 @@ const App: React.FC = () => {
           setNotification('Catálogo de piezas actualizado exitosamente');
         }}
       />
+      {showHelpModal && <HelpModal onClose={() => setShowHelpModal(false)} />}
     </div>
   );
 };
