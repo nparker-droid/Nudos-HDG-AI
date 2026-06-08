@@ -1,5 +1,4 @@
 import React, { useMemo, useState } from 'react';
-import * as XLSX from 'xlsx';
 import { HydraulicNode, Piece, Project } from '../types.ts';
 
 interface ProjectReviewModalProps {
@@ -80,6 +79,14 @@ const formatUnionDiameterForKind = (unionKind: string, diameter: string) => {
 
 const formatWeight = (value: number) =>
   value ? value.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '';
+
+const escapeXml = (value: string | number) =>
+  String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
 
 type ReviewNode = HydraulicNode & { categoryName: string; documentName: string };
 type SummaryColumn = {
@@ -260,7 +267,6 @@ const ProjectReviewModal: React.FC<ProjectReviewModalProps> = ({ project }) => {
   const cameraNodes = filterAndSort(allNodes.filter(node => !isNumericNode(node)));
 
   const exportWorkbook = () => {
-    const workbook = XLSX.utils.book_new();
     const usedSheetNames = new Set<string>();
     const sanitizeSheetName = (name: string) => {
       const clean = name.replace(/[\\/?*\[\]:]/g, ' ').trim() || 'Hoja';
@@ -276,124 +282,223 @@ const ProjectReviewModal: React.FC<ProjectReviewModalProps> = ({ project }) => {
       return candidate;
     };
 
+    type XmlCell = {
+      value?: string | number;
+      style?: string;
+      type?: 'String' | 'Number';
+      mergeAcross?: number;
+      mergeDown?: number;
+      index?: number;
+    };
+
+    const xmlCell = (cell: XmlCell) => {
+      const attrs = [
+        cell.index ? `ss:Index="${cell.index}"` : '',
+        cell.style ? `ss:StyleID="${cell.style}"` : '',
+        cell.mergeAcross ? `ss:MergeAcross="${cell.mergeAcross}"` : '',
+        cell.mergeDown ? `ss:MergeDown="${cell.mergeDown}"` : ''
+      ].filter(Boolean).join(' ');
+      if (cell.value === undefined || cell.value === '') return `<Cell${attrs ? ` ${attrs}` : ''}/>`;
+      const type = cell.type || (typeof cell.value === 'number' ? 'Number' : 'String');
+      return `<Cell${attrs ? ` ${attrs}` : ''}><Data ss:Type="${type}">${escapeXml(cell.value)}</Data></Cell>`;
+    };
+
+    const xmlRow = (cells: XmlCell[], height?: number) =>
+      `<Row${height ? ` ss:Height="${height}"` : ''}>${cells.map(xmlCell).join('')}</Row>`;
+
     const appendMatrixSheet = (sheetName: string, nodes: ReviewNode[]) => {
       const matrix = buildMatrix(project, nodes);
-      const rows: Array<Array<string | number>> = [];
-      const merges: XLSX.Range[] = [];
       const baseHeaders = ['ID Nudo', 'Nombre Nudo', 'Capitulo', 'Documento'];
+      const rows: string[] = [];
+      const materialGroups = buildHeaderGroups(matrix.columns, col => col.category);
+      const mechanismGroups = buildHeaderGroups(matrix.columns, col => col.mechanismGroup, col => `${col.category}|${col.mechanismGroup}`);
+      const pieceGroups = buildHeaderGroups(matrix.columns, col => col.name, col => `${col.category}|${col.mechanismGroup}|${col.name}`);
 
-      rows.push([...baseHeaders, ...Array(matrix.columns.length).fill(''), 'TOTAL', 'PESO KG', 'ANCLAJE', 'ALERTAS']);
-      rows.push([...Array(4).fill(''), ...Array(matrix.columns.length).fill(''), '', '', '', '']);
-      rows.push([...Array(4).fill(''), ...Array(matrix.columns.length).fill(''), '', '', '', '']);
-      rows.push([...Array(4).fill(''), ...matrix.columns.map(col => col.diameter), '', '', '', '']);
-
-      baseHeaders.forEach((_, colIndex) => merges.push({ s: { r: 0, c: colIndex }, e: { r: 3, c: colIndex } }));
-      const tailStart = 4 + matrix.columns.length;
-      [tailStart, tailStart + 1, tailStart + 2, tailStart + 3].forEach(colIndex => merges.push({ s: { r: 0, c: colIndex }, e: { r: 3, c: colIndex } }));
-
-      const addHeaderGroups = (rowIndex: number, groups: HeaderGroup[]) => {
-        groups.forEach(group => {
-          const col = 4 + group.start;
-          rows[rowIndex][col] = group.label;
-          if (group.span > 1) merges.push({ s: { r: rowIndex, c: col }, e: { r: rowIndex, c: col + group.span - 1 } });
-        });
-      };
-
-      addHeaderGroups(0, buildHeaderGroups(matrix.columns, col => col.category));
-      addHeaderGroups(1, buildHeaderGroups(matrix.columns, col => col.mechanismGroup, col => `${col.category}|${col.mechanismGroup}`));
-      addHeaderGroups(2, buildHeaderGroups(matrix.columns, col => col.name, col => `${col.category}|${col.mechanismGroup}|${col.name}`));
+      rows.push(xmlRow([
+        ...baseHeaders.map(label => ({ value: label, style: 'Header', mergeDown: 3 })),
+        ...materialGroups.map(group => ({ value: group.label, style: 'Header', mergeAcross: group.span - 1 })),
+        { value: 'TOTAL', style: 'Header', mergeDown: 3 },
+        { value: 'PESO KG', style: 'Header', mergeDown: 3 },
+        { value: 'ANCLAJE', style: 'Header', mergeDown: 3 },
+        { value: 'ALERTAS', style: 'Header', mergeDown: 3 }
+      ], 24));
+      rows.push(xmlRow([
+        { index: 5 },
+        ...mechanismGroups.map(group => ({ value: group.label, style: 'Header', mergeAcross: group.span - 1 }))
+      ], 24));
+      rows.push(xmlRow([
+        { index: 5 },
+        ...pieceGroups.map(group => ({ value: group.label, style: 'Header', mergeAcross: group.span - 1 }))
+      ], 30));
+      rows.push(xmlRow([
+        { index: 5 },
+        ...matrix.columns.map(col => ({ value: col.diameter, style: 'Header' }))
+      ], 22));
 
       nodes.forEach(node => {
         const duplicate = matrix.duplicateKeys.has(`${node.type || 'Otro'}:${normalizeText(node.id)}`);
         const incomplete = node.pieces.some(piece => !piece.name || !piece.material || !piece.diameter || piece.quantity <= 0);
         let rowTotal = 0;
         let rowWeight = 0;
-        const quantities = matrix.columns.map(col => {
+        const quantities: XmlCell[] = matrix.columns.map(col => {
           const qty = matrix.quantityFor(node, col);
           if (!col.isUnion) rowTotal += qty;
           rowWeight += qty * (col.weight || 0);
-          return qty || '';
+          return { value: qty || '', style: col.isUnion ? 'UnionData' : 'DataCenter', type: 'Number' };
         });
-        rows.push([
-          node.id,
-          node.nodeName,
-          node.categoryName,
-          node.documentName,
+        rows.push(xmlRow([
+          { value: node.id, style: 'FrozenId' },
+          { value: node.nodeName, style: 'FrozenName' },
+          { value: node.categoryName, style: 'Data' },
+          { value: node.documentName, style: 'Data' },
           ...quantities,
-          rowTotal || '',
-          rowWeight ? Number(rowWeight.toFixed(2)) : '',
-          node.anchorageCount || '',
-          [duplicate ? 'ID duplicado' : '', incomplete ? 'Revisar piezas' : ''].filter(Boolean).join(', ')
-        ]);
+          { value: rowTotal || '', style: 'TotalData', type: 'Number' },
+          { value: rowWeight ? Number(rowWeight.toFixed(2)) : '', style: 'TotalData', type: 'Number' },
+          { value: node.anchorageCount || '', style: 'DataCenter', type: 'Number' },
+          { value: [duplicate ? 'ID duplicado' : '', incomplete ? 'Revisar piezas' : ''].filter(Boolean).join(', '), style: duplicate || incomplete ? 'Alert' : 'Data' }
+        ]));
       });
 
       if (nodes.length > 0) {
-        rows.push([
-          'CANTIDAD TOTAL',
-          '',
-          '',
-          '',
-          ...matrix.columns.map(col => matrix.totals.get(col.key) || ''),
-          matrix.grandTotalPieces,
-          matrix.grandTotalWeight ? Number(matrix.grandTotalWeight.toFixed(2)) : '',
-          matrix.totalAnchorages,
-          ''
-        ]);
-        rows.push([
-          'PESO UNITARIO KG',
-          '',
-          '',
-          '',
-          ...matrix.columns.map(col => col.weight || ''),
-          '',
-          '',
-          '',
-          ''
-        ]);
-        rows.push([
-          'PESO TOTAL KG',
-          '',
-          '',
-          '',
+        rows.push(xmlRow([
+          { value: 'CANTIDAD TOTAL', style: 'TotalHeader' },
+          { value: '', style: 'TotalHeader' },
+          { value: '', style: 'TotalHeader' },
+          { value: '', style: 'TotalHeader' },
+          ...matrix.columns.map(col => ({ value: matrix.totals.get(col.key) || '', style: col.isUnion ? 'UnionTotal' : 'TotalHeader', type: 'Number' as const })),
+          { value: matrix.grandTotalPieces, style: 'TotalHeader', type: 'Number' },
+          { value: matrix.grandTotalWeight ? Number(matrix.grandTotalWeight.toFixed(2)) : '', style: 'TotalHeader', type: 'Number' },
+          { value: matrix.totalAnchorages, style: 'TotalHeader', type: 'Number' },
+          { value: '', style: 'TotalHeader' }
+        ]));
+        rows.push(xmlRow([
+          { value: 'PESO UNITARIO KG', style: 'WeightHeader' },
+          { value: '', style: 'WeightHeader' },
+          { value: '', style: 'WeightHeader' },
+          { value: '', style: 'WeightHeader' },
+          ...matrix.columns.map(col => ({ value: col.weight || '', style: col.isUnion ? 'UnionWeight' : 'WeightData', type: 'Number' as const })),
+          { value: '', style: 'WeightHeader' },
+          { value: '', style: 'WeightHeader' },
+          { value: '', style: 'WeightHeader' },
+          { value: '', style: 'WeightHeader' }
+        ]));
+        rows.push(xmlRow([
+          { value: 'PESO TOTAL KG', style: 'WeightHeader' },
+          { value: '', style: 'WeightHeader' },
+          { value: '', style: 'WeightHeader' },
+          { value: '', style: 'WeightHeader' },
           ...matrix.columns.map(col => {
             const totalWeight = matrix.totalWeightForColumn(col);
-            return totalWeight ? Number(totalWeight.toFixed(2)) : '';
+            return { value: totalWeight ? Number(totalWeight.toFixed(2)) : '', style: col.isUnion ? 'UnionWeight' : 'WeightData', type: 'Number' as const };
           }),
-          '',
-          matrix.grandTotalWeight ? Number(matrix.grandTotalWeight.toFixed(2)) : '',
-          '',
-          ''
-        ]);
+          { value: '', style: 'WeightHeader' },
+          { value: matrix.grandTotalWeight ? Number(matrix.grandTotalWeight.toFixed(2)) : '', style: 'WeightHeader', type: 'Number' },
+          { value: '', style: 'WeightHeader' },
+          { value: '', style: 'WeightHeader' }
+        ]));
       }
 
-      const worksheet = XLSX.utils.aoa_to_sheet(rows);
-      worksheet['!merges'] = merges;
-      worksheet['!cols'] = [
-        { wch: 16 },
-        { wch: 32 },
-        { wch: 20 },
-        { wch: 20 },
-        ...matrix.columns.map(() => ({ wch: 16 })),
-        { wch: 12 },
-        { wch: 14 },
-        { wch: 12 },
-        { wch: 24 }
-      ];
-      XLSX.utils.book_append_sheet(workbook, worksheet, sanitizeSheetName(sheetName));
+      const columnsXml = [
+        '<Column ss:Width="85"/>',
+        '<Column ss:Width="190"/>',
+        '<Column ss:Width="120"/>',
+        '<Column ss:Width="120"/>',
+        ...matrix.columns.map(() => '<Column ss:Width="90"/>'),
+        '<Column ss:Width="70"/>',
+        '<Column ss:Width="85"/>',
+        '<Column ss:Width="70"/>',
+        '<Column ss:Width="155"/>'
+      ].join('');
+
+      return `
+        <Worksheet ss:Name="${escapeXml(sanitizeSheetName(sheetName))}">
+          <Table>${columnsXml}${rows.join('')}</Table>
+          <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
+            <FreezePanes/>
+            <FrozenNoSplit/>
+            <SplitHorizontal>4</SplitHorizontal>
+            <TopRowBottomPane>4</TopRowBottomPane>
+            <SplitVertical>2</SplitVertical>
+            <LeftColumnRightPane>2</LeftColumnRightPane>
+            <ActivePane>0</ActivePane>
+            <Panes>
+              <Pane><Number>3</Number></Pane>
+              <Pane><Number>1</Number></Pane>
+              <Pane><Number>2</Number></Pane>
+              <Pane><Number>0</Number></Pane>
+            </Panes>
+            <ProtectObjects>False</ProtectObjects>
+            <ProtectScenarios>False</ProtectScenarios>
+          </WorksheetOptions>
+        </Worksheet>
+      `;
     };
 
     const allNumericNodes = allNodes.filter(isNumericNode).sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
     const allCameraNodes = allNodes.filter(node => !isNumericNode(node)).sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
-    appendMatrixSheet('Nudos Global', allNumericNodes);
+    const worksheets: string[] = [];
+    worksheets.push(appendMatrixSheet('Nudos Global', allNumericNodes));
     Array.from(new Set(allNumericNodes.map(node => node.documentName))).forEach(documentName => {
-      appendMatrixSheet(`Nudos ${documentName}`, allNumericNodes.filter(node => node.documentName === documentName));
+      worksheets.push(appendMatrixSheet(`Nudos ${documentName}`, allNumericNodes.filter(node => node.documentName === documentName)));
     });
-    appendMatrixSheet('Camaras Global', allCameraNodes);
+    worksheets.push(appendMatrixSheet('Camaras Global', allCameraNodes));
     Array.from(new Set(allCameraNodes.map(node => node.documentName))).forEach(documentName => {
-      appendMatrixSheet(`Camaras ${documentName}`, allCameraNodes.filter(node => node.documentName === documentName));
+      worksheets.push(appendMatrixSheet(`Camaras ${documentName}`, allCameraNodes.filter(node => node.documentName === documentName)));
     });
 
-    XLSX.writeFile(workbook, `Resumen_General_${project.name.replace(/\s+/g, '_')}.xlsx`);
+    const workbookXml = `<?xml version="1.0" encoding="UTF-8"?>
+      <?mso-application progid="Excel.Sheet"?>
+      <Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+        xmlns:o="urn:schemas-microsoft-com:office:office"
+        xmlns:x="urn:schemas-microsoft-com:office:excel"
+        xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+        <Styles>
+          <Style ss:ID="Default" ss:Name="Normal">
+            <Alignment ss:Vertical="Center"/>
+            <Font ss:FontName="Calibri" ss:Size="10"/>
+            <Borders>
+              <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D9E2EC"/>
+              <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D9E2EC"/>
+              <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D9E2EC"/>
+              <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D9E2EC"/>
+            </Borders>
+          </Style>
+          <Style ss:ID="Header">
+            <Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/>
+            <Font ss:FontName="Calibri" ss:Size="9" ss:Bold="1" ss:Color="#FFFFFF"/>
+            <Interior ss:Color="#004071" ss:Pattern="Solid"/>
+            <Borders>
+              <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#FFFFFF"/>
+              <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#FFFFFF"/>
+              <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#FFFFFF"/>
+              <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#FFFFFF"/>
+            </Borders>
+          </Style>
+          <Style ss:ID="Data"><Alignment ss:Vertical="Center" ss:WrapText="1"/></Style>
+          <Style ss:ID="DataCenter"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><NumberFormat ss:Format="0"/></Style>
+          <Style ss:ID="FrozenId"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Font ss:Bold="1" ss:Color="#88C13E"/></Style>
+          <Style ss:ID="FrozenName"><Alignment ss:Vertical="Center" ss:WrapText="1"/><Font ss:Bold="1" ss:Color="#004071"/></Style>
+          <Style ss:ID="UnionData"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Interior ss:Color="#EAF4FF" ss:Pattern="Solid"/><Font ss:Bold="1" ss:Color="#1D4F91"/><NumberFormat ss:Format="0"/></Style>
+          <Style ss:ID="TotalData"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Font ss:Bold="1" ss:Color="#004071"/><NumberFormat ss:Format="0.00"/></Style>
+          <Style ss:ID="Alert"><Alignment ss:Vertical="Center" ss:WrapText="1"/><Interior ss:Color="#FFF7D6" ss:Pattern="Solid"/><Font ss:Bold="1" ss:Color="#9A5B00"/></Style>
+          <Style ss:ID="TotalHeader"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Interior ss:Color="#004071" ss:Pattern="Solid"/><Font ss:Bold="1" ss:Color="#FFFFFF"/><NumberFormat ss:Format="0.00"/></Style>
+          <Style ss:ID="UnionTotal"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Interior ss:Color="#1D4F91" ss:Pattern="Solid"/><Font ss:Bold="1" ss:Color="#FFFFFF"/><NumberFormat ss:Format="0"/></Style>
+          <Style ss:ID="WeightHeader"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Interior ss:Color="#E8EEF5" ss:Pattern="Solid"/><Font ss:Bold="1" ss:Color="#004071"/><NumberFormat ss:Format="0.00"/></Style>
+          <Style ss:ID="WeightData"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/><Font ss:Bold="1" ss:Color="#004071"/><NumberFormat ss:Format="0.00"/></Style>
+          <Style ss:ID="UnionWeight"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Interior ss:Color="#EAF4FF" ss:Pattern="Solid"/><Font ss:Bold="1" ss:Color="#1D4F91"/><NumberFormat ss:Format="0.00"/></Style>
+        </Styles>
+        ${worksheets.join('')}
+      </Workbook>`;
+
+    const blob = new Blob([workbookXml], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Resumen_General_${project.name.replace(/\s+/g, '_')}.xls`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   const renderTable = (title: string, nodes: ReviewNode[]) => {
@@ -407,34 +512,34 @@ const ProjectReviewModal: React.FC<ProjectReviewModalProps> = ({ project }) => {
           </div>
         </div>
         <div className="overflow-auto max-h-[70vh]">
-          <table className="min-w-[1400px] w-max text-left border-collapse text-xs">
+          <table className="min-w-[1400px] w-max text-left border-separate border-spacing-0 text-xs">
             <thead className="bg-white shadow-sm">
-              <tr className="bg-[#004071] text-white uppercase text-[9px] tracking-widest">
-                <th rowSpan={4} className="px-4 py-3 w-[140px] min-w-[140px] max-w-[140px] border-r border-white/10">ID Nudo</th>
-                <th rowSpan={4} className="px-4 py-3 w-[260px] min-w-[260px] max-w-[260px] border-r border-white/10">Nombre Nudo</th>
-                <th rowSpan={4} className="px-3 py-3 min-w-[130px] border-r border-white/10">Capitulo</th>
-                <th rowSpan={4} className="px-3 py-3 min-w-[130px] border-r border-white/10">Documento</th>
+              <tr className="bg-[#004071] text-white uppercase text-[9px] tracking-widest h-[42px]">
+                <th rowSpan={4} className="sticky top-0 left-0 z-50 px-4 py-3 w-[140px] min-w-[140px] max-w-[140px] border-r border-b border-white/20 bg-[#004071]">ID Nudo</th>
+                <th rowSpan={4} className="sticky top-0 left-[140px] z-50 px-4 py-3 w-[260px] min-w-[260px] max-w-[260px] border-r border-b border-white/20 bg-[#004071]">Nombre Nudo</th>
+                <th rowSpan={4} className="sticky top-0 z-40 px-3 py-3 min-w-[130px] border-r border-b border-white/20 bg-[#004071]">Capitulo</th>
+                <th rowSpan={4} className="sticky top-0 z-40 px-3 py-3 min-w-[130px] border-r border-b border-white/20 bg-[#004071]">Documento</th>
                 {buildHeaderGroups(matrix.columns, col => col.category).map(group => (
-                  <th key={`mat-${title}-${group.label}-${group.start}`} colSpan={group.span} className={headerGroupClass(group)}>{group.label}</th>
+                  <th key={`mat-${title}-${group.label}-${group.start}`} colSpan={group.span} className={`sticky top-0 z-40 h-[42px] ${headerGroupClass(group)}`}>{group.label}</th>
                 ))}
-                <th rowSpan={4} className="px-3 py-3 min-w-[90px] text-center border-l-4 border-l-[#004071]">TOTAL</th>
-                <th rowSpan={4} className="px-3 py-3 min-w-[110px] text-center">PESO KG</th>
-                <th rowSpan={4} className="px-3 py-3 min-w-[90px] text-center">ANCLAJE</th>
-                <th rowSpan={4} className="px-3 py-3 min-w-[150px]">ALERTAS</th>
+                <th rowSpan={4} className="sticky top-0 z-40 px-3 py-3 min-w-[90px] text-center border-l-4 border-l-white/50 border-b border-white/20 bg-[#004071]">TOTAL</th>
+                <th rowSpan={4} className="sticky top-0 z-40 px-3 py-3 min-w-[110px] text-center border-b border-white/20 bg-[#004071]">PESO KG</th>
+                <th rowSpan={4} className="sticky top-0 z-40 px-3 py-3 min-w-[90px] text-center border-b border-white/20 bg-[#004071]">ANCLAJE</th>
+                <th rowSpan={4} className="sticky top-0 z-40 px-3 py-3 min-w-[150px] border-b border-white/20 bg-[#004071]">ALERTAS</th>
               </tr>
-              <tr className="bg-[#004071] text-white uppercase text-[9px] font-black">
+              <tr className="bg-[#004071] text-white uppercase text-[9px] font-black h-[42px]">
                 {buildHeaderGroups(matrix.columns, col => col.mechanismGroup, col => `${col.category}|${col.mechanismGroup}`).map(group => (
-                  <th key={`mec-${title}-${group.label}-${group.start}`} colSpan={group.span} className={headerGroupClass(group)}>{group.label}</th>
+                  <th key={`mec-${title}-${group.label}-${group.start}`} colSpan={group.span} className={`sticky top-[42px] z-40 h-[42px] ${headerGroupClass(group)}`}>{group.label}</th>
                 ))}
               </tr>
-              <tr className="bg-[#004071] text-white uppercase text-[9px] font-black">
+              <tr className="bg-[#004071] text-white uppercase text-[9px] font-black h-[42px]">
                 {buildHeaderGroups(matrix.columns, col => col.name, col => `${col.category}|${col.mechanismGroup}|${col.name}`).map(group => (
-                  <th key={`piece-${title}-${group.label}-${group.start}`} colSpan={group.span} className={headerGroupClass(group)}>{group.label}</th>
+                  <th key={`piece-${title}-${group.label}-${group.start}`} colSpan={group.span} className={`sticky top-[84px] z-40 h-[42px] ${headerGroupClass(group)}`}>{group.label}</th>
                 ))}
               </tr>
-              <tr className="bg-[#004071] text-white uppercase text-[9px] font-black border-b">
+              <tr className="bg-[#004071] text-white uppercase text-[9px] font-black border-b h-[42px]">
                 {matrix.columns.map((col, colIndex) => (
-                  <th key={`diam-${title}-${col.key}`} className={`px-3 py-2 text-center min-w-[105px] border-l border-l-white/20 bg-[#004071] text-white`}>{col.diameter}</th>
+                  <th key={`diam-${title}-${col.key}`} className={`sticky top-[126px] z-40 h-[42px] px-3 py-2 text-center min-w-[105px] border-l border-l-white/20 border-b border-white/20 bg-[#004071] text-white`}>{col.diameter}</th>
                 ))}
               </tr>
             </thead>
@@ -450,8 +555,8 @@ const ProjectReviewModal: React.FC<ProjectReviewModalProps> = ({ project }) => {
                 let rowWeight = 0;
                 return (
                   <tr key={`${title}-${node.id}-${index}`} className={duplicate || incomplete ? 'bg-amber-50/60' : 'hover:bg-slate-50'}>
-                    <td className="px-4 py-3 font-black text-[#88C13E] w-[140px] min-w-[140px] max-w-[140px] truncate bg-inherit" title={node.id}>{node.id}</td>
-                    <td className="px-4 py-3 font-bold text-[#004071] w-[260px] min-w-[260px] max-w-[260px] truncate bg-inherit" title={node.nodeName}>{node.nodeName}</td>
+                    <td className="sticky left-0 z-30 px-4 py-3 font-black text-[#88C13E] w-[140px] min-w-[140px] max-w-[140px] truncate bg-inherit border-r border-slate-200" title={node.id}>{node.id}</td>
+                    <td className="sticky left-[140px] z-30 px-4 py-3 font-bold text-[#004071] w-[260px] min-w-[260px] max-w-[260px] truncate bg-inherit border-r border-slate-200 shadow-[8px_0_12px_-12px_rgba(15,23,42,0.45)]" title={node.nodeName}>{node.nodeName}</td>
                     <td className="px-3 py-3 truncate max-w-[160px]" title={node.categoryName}>{node.categoryName}</td>
                     <td className="px-3 py-3 truncate max-w-[160px]" title={node.documentName}>{node.documentName}</td>
                     {matrix.columns.map((col, colIndex) => {
@@ -469,8 +574,8 @@ const ProjectReviewModal: React.FC<ProjectReviewModalProps> = ({ project }) => {
               })}
               {nodes.length > 0 && (
                 <tr className="bg-[#004071] text-white font-black uppercase">
-                  <td className="px-4 py-3">Cantidad Total</td>
-                  <td className="px-4 py-3"></td>
+                  <td className="sticky left-0 z-30 px-4 py-3 bg-[#004071] border-r border-white/20">Cantidad Total</td>
+                  <td className="sticky left-[140px] z-30 px-4 py-3 bg-[#004071] border-r border-white/20 shadow-[8px_0_12px_-12px_rgba(15,23,42,0.45)]"></td>
                   <td></td>
                   <td></td>
                   {matrix.columns.map((col, colIndex) => <td key={`total-${title}-${col.key}`} className={`px-3 py-3 text-center ${materialBlockClass(matrix.columns, colIndex, col)}`}>{matrix.totals.get(col.key) || ''}</td>)}
@@ -483,8 +588,8 @@ const ProjectReviewModal: React.FC<ProjectReviewModalProps> = ({ project }) => {
               {nodes.length > 0 && (
                 <>
                   <tr className="bg-slate-100 text-[#004071] font-black uppercase">
-                    <td className="px-4 py-3">Peso Unitario kg</td>
-                    <td className="px-4 py-3"></td>
+                    <td className="sticky left-0 z-30 px-4 py-3 bg-slate-100 border-r border-slate-200">Peso Unitario kg</td>
+                    <td className="sticky left-[140px] z-30 px-4 py-3 bg-slate-100 border-r border-slate-200 shadow-[8px_0_12px_-12px_rgba(15,23,42,0.45)]"></td>
                     <td></td>
                     <td></td>
                     {matrix.columns.map((col, colIndex) => <td key={`unit-weight-${title}-${col.key}`} className={`px-3 py-3 text-center ${materialBlockClass(matrix.columns, colIndex, col)}`}>{formatWeight(col.weight || 0)}</td>)}
@@ -494,8 +599,8 @@ const ProjectReviewModal: React.FC<ProjectReviewModalProps> = ({ project }) => {
                     <td></td>
                   </tr>
                   <tr className="bg-slate-50 text-[#004071] font-black uppercase">
-                    <td className="px-4 py-3">Peso Total kg</td>
-                    <td className="px-4 py-3"></td>
+                    <td className="sticky left-0 z-30 px-4 py-3 bg-slate-50 border-r border-slate-200">Peso Total kg</td>
+                    <td className="sticky left-[140px] z-30 px-4 py-3 bg-slate-50 border-r border-slate-200 shadow-[8px_0_12px_-12px_rgba(15,23,42,0.45)]"></td>
                     <td></td>
                     <td></td>
                     {matrix.columns.map((col, colIndex) => <td key={`total-weight-${title}-${col.key}`} className={`px-3 py-3 text-center ${materialBlockClass(matrix.columns, colIndex, col)}`}>{formatWeight(matrix.totalWeightForColumn(col))}</td>)}
