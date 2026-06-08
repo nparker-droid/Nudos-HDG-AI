@@ -111,6 +111,7 @@ export const findWeightInCatalog = (
         // Direct match or common aliases
         if (iMat === nMat || nMat === iMat) return true;
         if ((iMat === 'HDPE' && nMat === 'PEAD') || (iMat === 'PEAD' && nMat === 'HDPE')) return true;
+        if (['PVC', 'PVCU', 'PVC-U', 'P.V.C'].includes(iMat) && ['PVC', 'PVCU', 'PVC-U', 'P.V.C'].includes(nMat)) return true;
         if (nMat === 'OTRO') return true; // Allow everything if piece is "Otro"
         return iMat.includes(nMat) || nMat.includes(iMat);
     });

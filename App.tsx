@@ -11,16 +11,16 @@ import AddNodeModal from './components/AddNodeModal.tsx';
 import LibraryModal from './components/LibraryModal.tsx';
 import AuditReportModal from './components/AuditReportModal.tsx';
 import CatalogModal from './components/CatalogModal.tsx';
+import ProjectReviewModal from './components/ProjectReviewModal.tsx';
 import { findWeightInCatalog } from './services/catalogService.ts';
 
 const INITIAL_CREDITS = 50;
 
-// Utility to strictly sort and format ID strings (e.g. "05, 01" -> "01, 05")
+// Sort comma-separated IDs while preserving the exact labels read from the plan.
 const sortIdString = (val: string): string => {
   return val.split(',')
     .map(s => s.trim())
     .filter(s => s.length > 0)
-    .map(s => s.replace(/(\d+)/, (match) => match.padStart(2, '0')))
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
     .join(', ');
 };
@@ -47,6 +47,75 @@ const SUGGESTED_PRICES: Record<string, number> = {
   'HORMIGÓN': 145000,
   'ANCLAJE': 180000
 };
+
+const normalizeText = (value: string) =>
+  value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim();
+
+const splitNodeIds = (id: string) => id.split(',').map(part => part.trim()).filter(Boolean);
+
+const getNodeIdentityKeys = (node: Pick<HydraulicNode, 'id' | 'type'>) =>
+  splitNodeIds(node.id).map(id => `${node.type || 'Otro'}:${normalizeText(id)}`);
+
+const getPrefixLabel = (type: string) => {
+  const prefixMap: Record<string, string> = {
+    'Corte': 'C',
+    'Ventosa': 'V',
+    'Desague': 'D',
+    'Reductora': 'R',
+    'Grifo': 'G',
+    'Numerico': ''
+  };
+  return prefixMap[type] || '';
+};
+
+const getFullTypeLabel = (type: string) => {
+  const labelMap: Record<string, string> = {
+    'Corte': 'Camaras de Corte',
+    'Ventosa': 'Camaras de Ventosa',
+    'Desague': 'Camaras de Desague',
+    'Reductora': 'Valvulas Reductoras',
+    'Grifo': 'Camaras de Grifo',
+    'Numerico': 'Nudos Numericos',
+    'Camara': 'Camaras con nomenclatura de plano',
+    'Otro': 'Otros elementos'
+  };
+  return labelMap[type] || type;
+};
+
+const formatIdsForDisplayGlobal = (idStr: string) => idStr;
+
+const mechanismKeywords = ['VALVULA', 'VENTOSA', 'REDUCTORA', 'JUNTA AUTOBLOQUEANTE', 'AUTOBLOQUEANTE', 'HIDRANTE', 'GRIFO'];
+const noAutoUnionKeywords = ['UNION', 'BRIDA', 'FLANGE', 'JUNTA', 'PERNO', 'PERNOS', 'TUBO', 'CANERIA', 'CAÑERIA', 'HORMIGON', 'ANCLAJE'];
+
+const inferHasMechanism = (piece: Piece) => {
+  const name = normalizeText(piece.name || '');
+  return mechanismKeywords.some(keyword => name.includes(keyword));
+};
+
+const shouldAutoAddUnions = (piece: Piece) => {
+  const name = normalizeText(piece.name || '');
+  if (!name) return false;
+  return !noAutoUnionKeywords.some(keyword => name.includes(keyword));
+};
+
+const getUnionKindForPiece = (piece: Piece, project?: Project) => {
+  const material = normalizeText(String(piece.material || ''));
+  if (material.includes('HDPE') || material.includes('PEAD')) return project?.hdpeUnionType || 'TF';
+  if (material.includes('PVC')) return 'PVC';
+  if (material.includes('ACERO') || material.includes('FDO') || material.includes('FIERRO') || material.includes('BRONCE')) return 'Brida';
+  return 'Brida';
+};
+
+const getPieceUnionCount = (piece: Piece) => {
+  if (typeof piece.unionCount === 'number') return piece.unionCount;
+  return shouldAutoAddUnions(piece) ? 2 : 0;
+};
+
+const withPieceDefaults = (piece: Piece): Piece => ({
+  ...piece,
+  hasMechanism: piece.hasMechanism ?? inferHasMechanism(piece),
+  unionCount: piece.unionCount ?? getPieceUnionCount(piece)
+});
 
 const getEstimatedWeight = (name: string, diameter: string, material: string, catalogItems?: CatalogItem[]): number => {
   if (catalogItems && catalogItems.length > 0) {
@@ -99,6 +168,7 @@ const App: React.FC = () => {
   const [notification, setNotification] = useState('');
   const [isAutoSaving, setIsAutoSaving] = useState(false);
   const [showAuditReportModal, setShowAuditReportModal] = useState(false);
+  const [showProjectReviewModal, setShowProjectReviewModal] = useState(false);
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({
     audit: false,
     schemes: false,
@@ -137,7 +207,8 @@ const App: React.FC = () => {
     version: 'A',
     stage: 'Ingeniería de Detalle',
     commune: '',
-    region: ''
+    region: '',
+    hdpeUnionType: 'TF'
   });
 
   useEffect(() => {
@@ -167,6 +238,21 @@ const App: React.FC = () => {
 
   const activeProject = useMemo(() => projects.find(p => p.id === activeProjectId), [projects, activeProjectId]);
   const activeCategory = useMemo(() => activeProject?.categories.find(c => c.id === activeCategoryId), [activeProject, activeCategoryId]);
+  const projectNodesForLibrary = useMemo<LibraryNode[]>(() => {
+    if (!activeProject) return [];
+    return activeProject.categories.flatMap(category =>
+      category.analyses.flatMap((analysis, analysisIndex) =>
+        (analysis.result?.nodes || []).map(node => {
+          const { id, ...rest } = node;
+          return {
+            ...rest,
+            libraryId: `project:${category.id}:${analysis.id}:${id}`,
+            nodeName: `${node.nodeName} (${id} / ${category.name} / Doc ${analysisIndex + 1})`
+          };
+        })
+      )
+    );
+  }, [activeProject]);
 
   // --- Auditoría Global de Capítulo ---
   const chapterNodes = useMemo(() => {
@@ -180,17 +266,10 @@ const App: React.FC = () => {
     const idCount = new Map<string, number>();
     const duplicates = new Set<string>();
     chapterNodes.forEach(node => {
-      const matches = node.id.match(/\d+/g);
-      if (matches) {
-        matches.forEach(id => {
-          const normalizedId = id.trim().toLowerCase();
-          if (normalizedId) {
-            const uniqueKey = `${node.type}:${normalizedId}`;
-            idCount.set(uniqueKey, (idCount.get(uniqueKey) || 0) + 1);
-            if (idCount.get(uniqueKey)! > 1) duplicates.add(uniqueKey);
-          }
-        });
-      }
+      getNodeIdentityKeys(node).forEach(uniqueKey => {
+        idCount.set(uniqueKey, (idCount.get(uniqueKey) || 0) + 1);
+        if (idCount.get(uniqueKey)! > 1) duplicates.add(uniqueKey);
+      });
     });
     return duplicates;
   }, [chapterNodes]);
@@ -295,13 +374,7 @@ const App: React.FC = () => {
   };
 
   const formatIdsForDisplayGlobal = (idStr: string, type: string) => {
-    const matches = idStr.match(/\d+/g);
-    if (!matches) return idStr;
-    const prefix = getPrefixLabel(type);
-    return matches.map(m => {
-      const num = parseInt(m, 10);
-      return prefix ? `${prefix}-${num}` : m.padStart(2, '0');
-    }).join(', ');
+    return idStr;
   };
 
   const handleCopyNode = (node: HydraulicNode) => {
@@ -355,7 +428,8 @@ const App: React.FC = () => {
       version: '1.0',
       stage: 'Ingeniería de Detalle',
       commune: '',
-      region: ''
+      region: '',
+      hdpeUnionType: 'TF'
     });
     setShowProjectModal(true);
   };
@@ -470,22 +544,25 @@ const App: React.FC = () => {
 
     activeCategory.analyses.forEach(analysis => {
       analysis.result?.nodes.forEach(node => {
-        const numericIds = node.id.match(/\d+/g) || [];
-        const multiplier = numericIds.length || 1;
+        const multiplier = splitNodeIds(node.id).length || 1;
 
         node.pieces.forEach(p => {
-          const normalizedName = p.name ? p.name.trim().toUpperCase() : '';
-          const materialKey = p.material.toUpperCase();
+          const normalizedPiece = withPieceDefaults(p);
+          const normalizedName = normalizedPiece.name ? normalizedPiece.name.trim().toUpperCase() : '';
+          const mechanismGroup = normalizedPiece.hasMechanism ? 'CON MECANISMO' : 'SIN MECANISMO';
+          const materialKey = `${String(normalizedPiece.material).toUpperCase()} / ${mechanismGroup}`;
           if (!materialData.has(materialKey)) {
             materialData.set(materialKey, { pieceMap: new Map(), materialWeight: 0 });
           }
 
           const mGroup = materialData.get(materialKey)!;
-          const key = `${normalizedName}-${p.diameter}-${p.union || 'S/U'}`.toUpperCase();
+          const unionKind = normalizedPiece.union || getUnionKindForPiece(normalizedPiece, activeProject);
+          const unionCount = getPieceUnionCount(normalizedPiece);
+          const key = `${normalizedName}-${normalizedPiece.diameter}-${unionKind}-${unionCount}`.toUpperCase();
           const existing = mGroup.pieceMap.get(key);
 
-          const qty = p.quantity * multiplier;
-          const individualWeight = p.weight || 0;
+          const qty = normalizedPiece.quantity * multiplier;
+          const individualWeight = normalizedPiece.weight || 0;
           const addedWeight = qty * individualWeight;
 
           mGroup.materialWeight += addedWeight;
@@ -504,12 +581,30 @@ const App: React.FC = () => {
             if (priceKey) suggestedPrice = SUGGESTED_PRICES[priceKey];
 
             mGroup.pieceMap.set(key, {
-              name: `${normalizedName} ${p.diameter} ${p.union || ''}`.trim(),
+              name: `${normalizedName} ${normalizedPiece.diameter} U:${unionCount} ${unionKind}`.trim(),
               unit: unit,
               quantity: qty,
               price: suggestedPrice,
               totalWeight: addedWeight
             });
+          }
+
+          if (unionCount > 0) {
+            const unionName = `UNION ${unionKind} ${normalizedPiece.diameter}`.trim();
+            const unionKey = `${unionName}-${normalizedPiece.diameter}`.toUpperCase();
+            const existingUnion = mGroup.pieceMap.get(unionKey);
+            const unionQty = qty * unionCount;
+            if (existingUnion) {
+              existingUnion.quantity += unionQty;
+            } else {
+              mGroup.pieceMap.set(unionKey, {
+                name: unionName,
+                unit: "Un",
+                quantity: unionQty,
+                price: SUGGESTED_PRICES['UNION'] || 0,
+                totalWeight: 0
+              });
+            }
           }
         });
       });
@@ -545,35 +640,37 @@ const App: React.FC = () => {
   const generateSummaryCSV = (nodes: HydraulicNode[], filename: string) => {
     if (nodes.length === 0) return alert("No hay nudos para exportar.");
 
-    // Sort nodes by ID
+    // Sort nodes by ID while preserving labels from the plans.
     const expandedNodes: HydraulicNode[] = [];
     nodes.forEach(node => {
-      const prefix = getPrefixLabel(node.type);
-      const numericIds: string[] = node.id.match(/\d+/g) || [];
-      if (numericIds.length > 0) {
-        numericIds.forEach(individualId => {
-          const formattedId = prefix ? `${prefix}-${parseInt(individualId, 10)}` : individualId.padStart(2, '0');
-          expandedNodes.push({ ...node, id: formattedId });
-        });
+      const ids = splitNodeIds(node.id);
+      if (ids.length > 1) {
+        ids.forEach(individualId => expandedNodes.push({ ...node, id: individualId }));
       } else {
-        expandedNodes.push(node);
+        expandedNodes.push({ ...node, id: ids[0] || node.id });
       }
     });
 
     expandedNodes.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
 
-    const pieceDetailsMap = new Map<string, { name: string, material: string, diameter: string, union: string, weight: number }>();
+    const pieceDetailsMap = new Map<string, { name: string, material: string, diameter: string, union: string, unionCount: number, mechanismGroup: string, weight: number }>();
     expandedNodes.forEach(node => {
       node.pieces.forEach(p => {
-        const normalizedName = p.name ? p.name.trim().toUpperCase() : '';
-        const key = `${p.material}|${normalizedName}|${p.union || 'S/U'}|${p.diameter}`;
+        const normalizedPiece = withPieceDefaults(p);
+        const normalizedName = normalizedPiece.name ? normalizedPiece.name.trim().toUpperCase() : '';
+        const unionKind = normalizedPiece.union || getUnionKindForPiece(normalizedPiece, activeProject);
+        const unionCount = getPieceUnionCount(normalizedPiece);
+        const mechanismGroup = normalizedPiece.hasMechanism ? 'CON MECANISMO' : 'SIN MECANISMO';
+        const key = `${normalizedPiece.material}|${mechanismGroup}|${normalizedName}|${unionKind}|${unionCount}|${normalizedPiece.diameter}`;
         if (!pieceDetailsMap.has(key)) {
-          const weightValue = (p.weight !== undefined && p.weight !== null) ? p.weight : getEstimatedWeight(normalizedName, p.diameter, p.material, catalogItems);
+          const weightValue = (normalizedPiece.weight !== undefined && normalizedPiece.weight !== null) ? normalizedPiece.weight : getEstimatedWeight(normalizedName, normalizedPiece.diameter, normalizedPiece.material, catalogItems);
           pieceDetailsMap.set(key, {
             name: normalizedName,
-            material: p.material,
-            diameter: p.diameter,
-            union: p.union || 'S/U',
+            material: normalizedPiece.material,
+            diameter: normalizedPiece.diameter,
+            union: unionKind,
+            unionCount,
+            mechanismGroup,
             weight: weightValue
           });
         } else {
@@ -605,7 +702,14 @@ const App: React.FC = () => {
     csvContent += ";\n";
 
     csvContent += ";;";
-    uniquePieceKeys.forEach(k => csvContent += `${pieceDetailsMap.get(k)?.diameter};`);
+    uniquePieceKeys.forEach(k => {
+      const detail = pieceDetailsMap.get(k);
+      csvContent += `${detail?.diameter || ''} / U:${detail?.unionCount || 0} ${detail?.union || ''};`;
+    });
+    csvContent += ";\n";
+
+    csvContent += "MECANISMO;;";
+    uniquePieceKeys.forEach(k => csvContent += `${pieceDetailsMap.get(k)?.mechanismGroup || ''};`);
     csvContent += ";\n";
 
     const totalQuantitiesPerPiece = new Map<string, number>();
@@ -618,8 +722,12 @@ const App: React.FC = () => {
       let rowSum = 0;
       uniquePieceKeys.forEach(k => {
         const found = node.pieces.find(p => {
-          const pName = p.name ? p.name.trim().toUpperCase() : '';
-          return `${p.material}|${pName}|${p.union || 'S/U'}|${p.diameter}` === k;
+          const normalizedPiece = withPieceDefaults(p);
+          const pName = normalizedPiece.name ? normalizedPiece.name.trim().toUpperCase() : '';
+          const unionKind = normalizedPiece.union || getUnionKindForPiece(normalizedPiece, activeProject);
+          const unionCount = getPieceUnionCount(normalizedPiece);
+          const mechanismGroup = normalizedPiece.hasMechanism ? 'CON MECANISMO' : 'SIN MECANISMO';
+          return `${normalizedPiece.material}|${mechanismGroup}|${pName}|${unionKind}|${unionCount}|${normalizedPiece.diameter}` === k;
         });
         const qty = found ? found.quantity : 0;
         csvContent += `${qty || ''};`;
@@ -791,7 +899,9 @@ const App: React.FC = () => {
       if (result && result.nodes) {
         result.nodes = result.nodes.map(n => ({
           ...n,
-          id: sortIdString(n.id)
+          id: sortIdString(n.id),
+          type: n.type || 'Otro',
+          pieces: (n.pieces || []).map(withPieceDefaults)
         }));
       }
 
@@ -1145,6 +1255,7 @@ const App: React.FC = () => {
         onExportProject={handleExportProject}
         onOpenLibrary={() => setShowLibraryModal(true)} onAddCategory={handleAddCategory} onEditCategory={handleEditCategory} onRemoveCategory={handleRemoveCategory}
         onImportProject={handleImportProject} onMoveCategory={handleMoveCategory} onOpenCatalog={() => setShowCatalogModal(true)}
+        onOpenProjectReview={(projectId) => { setActiveProjectId(projectId); setShowProjectReviewModal(true); }}
       />
 
       <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className={`fixed top-1/2 -translate-y-1/2 z-40 w-8 h-20 bg-white border border-slate-200 rounded-r-2xl shadow-xl flex items-center justify-center text-[#004071] transition-all duration-300 hover:bg-[#004071] hover:text-white ${isSidebarOpen ? 'left-[320px]' : 'left-0'}`}>
@@ -1159,6 +1270,7 @@ const App: React.FC = () => {
                 <div className="flex items-center gap-4">
                   <h2 className="text-xl font-black text-[#004071] uppercase tracking-tighter leading-none">{activeProject.name}</h2>
                   <button onClick={() => handleOpenEditProject(activeProject.id)} className="text-[#88C13E] hover:text-[#004071] transition-colors"><i className="fa-solid fa-pen-to-square text-sm"></i></button>
+                  <button onClick={() => setShowProjectReviewModal(true)} className="text-[#004071] hover:text-[#88C13E] transition-colors" title="Revisar tabla general del proyecto"><i className="fa-solid fa-table-list text-sm"></i></button>
                   <span className="text-[10px] font-black text-white uppercase tracking-widest bg-[#004071] px-2 py-1 rounded-md">{activeProject.code}</span>
                   {isAutoSaving && (
                     <span className="text-[8px] font-black text-[#88C13E] uppercase tracking-widest bg-[#88C13E]/10 px-2 py-1 rounded animate-pulse">
@@ -1468,6 +1580,7 @@ const App: React.FC = () => {
         {showLibraryModal && (
           <LibraryModal
             nodes={libraryNodes}
+            projectNodes={projectNodesForLibrary}
             onClose={() => setShowLibraryModal(false)}
             onUseNode={handleUseLibraryNode}
             isCategoryActive={!!activeCategoryId}
@@ -1542,6 +1655,20 @@ const App: React.FC = () => {
                   </div>
                 </div>
 
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="flex flex-col gap-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Union HDPE</label>
+                    <select
+                      value={projectForm.hdpeUnionType || 'TF'}
+                      onChange={e => setProjectForm({ ...projectForm, hdpeUnionType: e.target.value as Project['hdpeUnionType'] })}
+                      className="bg-slate-50 border border-slate-100 p-4 rounded-xl text-sm font-black text-[#004071]"
+                    >
+                      <option value="TF">Termofusion (TF)</option>
+                      <option value="EL">Electrofusion (EL)</option>
+                    </select>
+                  </div>
+                </div>
+
                 <div className="flex justify-end gap-4 pt-4">
                   <button onClick={() => setShowProjectModal(false)} className="px-6 py-4 text-xs font-black uppercase text-slate-400">Cancelar</button>
                   <button onClick={handleSaveProject} className="px-12 py-4 bg-[#004071] text-white rounded-2xl text-xs font-black uppercase shadow-lg hover:bg-[#88C13E]">Guardar</button>
@@ -1572,6 +1699,13 @@ const App: React.FC = () => {
             onClose={() => setShowAuditReportModal(false)}
           />
         )}
+
+        {showProjectReviewModal && activeProject && (
+          <ProjectReviewModal
+            project={activeProject}
+            onClose={() => setShowProjectReviewModal(false)}
+          />
+        )}
       </main>
 
       <CatalogModal
@@ -1587,4 +1721,3 @@ const App: React.FC = () => {
   );
 };
 export default App;
-

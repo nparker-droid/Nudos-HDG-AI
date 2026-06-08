@@ -4,12 +4,17 @@
  */
 export enum NodeMaterial {
   HDPE = 'HDPE',
+  PVC = 'PVC',
   FeFdo = 'Fe Fdo',
   Acero = 'Acero',
   Bronce = 'Bronce',
   Hormigon = 'Hormigón',
   Otro = 'Otro'
 }
+
+export type NodeType = 'Numerico' | 'Ventosa' | 'Desague' | 'Corte' | 'Reductora' | 'Grifo' | 'Camara' | 'Otro';
+
+export type HdpeUnionType = 'TF' | 'EL';
 
 /**
  * Representa un componente individual dentro de un nudo (ej. Codo, Válvula)
@@ -20,6 +25,8 @@ export interface Piece {
   diameter: string;
   quantity: number;
   union?: string; // Ej: EL-EL, Br-Br, EL-Br
+  unionCount?: number;
+  hasMechanism?: boolean;
   weight?: number; // Peso unitario en kg
   notes?: string;
 }
@@ -30,7 +37,7 @@ export interface Piece {
 export interface HydraulicNode {
   id: string;
   nodeName: string;
-  type: 'Numerico' | 'Ventosa' | 'Desague' | 'Corte' | 'Reductora';
+  type: NodeType;
   pieces: Piece[];
   anchorageCount: number;
   sourceGroupings?: string[];
@@ -87,5 +94,15 @@ export interface Project {
   stage: string;
   commune: string;
   region: string;
+  hdpeUnionType?: HdpeUnionType;
   categories: Category[];
+}
+
+export interface CatalogItem {
+  id: string;
+  name: string;
+  diameter: string;
+  weight: number;
+  diameterInches: string;
+  material: string;
 }

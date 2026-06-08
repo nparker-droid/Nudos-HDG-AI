@@ -2,6 +2,9 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { AnalysisResult, HydraulicNode, Piece, NodeMaterial, Project, CatalogItem } from '../types.ts';
 import { findWeightInCatalog } from '../services/catalogService.ts';
 
+const normalizeText = (value: string) =>
+  value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim();
+
 interface ResultDisplayProps {
   analysisId: string;
   result: AnalysisResult;
@@ -32,6 +35,7 @@ const PieceRow: React.FC<PieceRowProps> = ({ piece, onUpdate, onRemove, catalogI
   const [localWeight, setLocalWeight] = useState(piece.weight !== undefined ? piece.weight.toString().replace('.', ',') : '');
 
   const isIncomplete = !piece.name || !piece.material || !piece.diameter || piece.quantity <= 0;
+  const inferredUnionCount = piece.unionCount ?? (piece.name && !/(union|unión|brida|flange|junta|perno|tubo|cañer|hormig|anclaje)/i.test(piece.name) ? 2 : 0);
 
   useEffect(() => {
     const parentWeightStr = piece.weight !== undefined ? piece.weight.toString().replace('.', ',') : '';
@@ -113,13 +117,25 @@ const PieceRow: React.FC<PieceRowProps> = ({ piece, onUpdate, onRemove, catalogI
         </select>
       </td>
       <td className="px-6 py-4 text-center">
-        <input
-          type="text"
-          placeholder='Ej: 3", 75mm, 160mm'
-          value={piece.diameter}
-          onChange={e => onUpdate({ diameter: e.target.value })}
-          className={`bg-transparent border-none text-center font-mono font-black text-[#004071] w-full outline-none placeholder:text-[9px] placeholder:font-normal placeholder:opacity-50 ${!piece.diameter ? 'placeholder:text-amber-500' : ''}`}
-        />
+        <div className="flex flex-col items-center gap-1">
+          <input
+            type="text"
+            placeholder='Ej: 3", 75mm, 160mm'
+            value={piece.diameter}
+            onChange={e => onUpdate({ diameter: e.target.value })}
+            className={`bg-transparent border-none text-center font-mono font-black text-[#004071] w-full outline-none placeholder:text-[9px] placeholder:font-normal placeholder:opacity-50 ${!piece.diameter ? 'placeholder:text-amber-500' : ''}`}
+          />
+          <label className="flex items-center gap-1 text-[8px] font-black text-slate-400 uppercase">
+            Uniones
+            <input
+              type="number"
+              min={0}
+              value={inferredUnionCount}
+              onChange={e => onUpdate({ unionCount: Math.max(0, parseInt(e.target.value, 10) || 0) })}
+              className="w-10 bg-slate-50 border border-slate-100 rounded text-center text-[9px] text-[#004071] font-black"
+            />
+          </label>
+        </div>
       </td>
       <td className="px-6 py-4 text-center group/weight relative">
         <input type="text" placeholder="0,00" value={localWeight} onChange={e => handleWeightChange(e.target.value)} className="bg-transparent border-none text-center font-mono text-[11px] text-slate-500 w-16 outline-none" />
@@ -133,6 +149,15 @@ const PieceRow: React.FC<PieceRowProps> = ({ piece, onUpdate, onRemove, catalogI
       </td>
       <td className="px-6 py-4 text-right">
         <div className="flex items-center justify-end gap-4">
+          <label className="flex items-center gap-1 text-[8px] font-black text-slate-400 uppercase" title="Pieza con mecanismo">
+            <input
+              type="checkbox"
+              checked={!!piece.hasMechanism}
+              onChange={e => onUpdate({ hasMechanism: e.target.checked })}
+              className="h-3 w-3 rounded border-slate-300 text-[#004071]"
+            />
+            Mec.
+          </label>
           <input type="number" value={piece.quantity} onChange={e => onUpdate({ quantity: parseInt(e.target.value) || 0 })} className={`bg-transparent border-none text-right font-black w-12 outline-none text-base ${piece.quantity <= 0 ? 'text-amber-600' : 'text-[#004071]'}`} />
           <button onClick={onRemove} className="opacity-0 group-hover/row:opacity-100 text-red-300 hover:text-red-500 transition-opacity"><i className="fa-solid fa-trash text-[10px]"></i></button>
         </div>
@@ -186,6 +211,12 @@ const NodeCard: React.FC<NodeCardProps> = ({ node, index, onUpdate, onRemove, on
   const handleUpdatePiece = (idx: number, updates: Partial<Piece>) => {
     const newPieces = [...node.pieces];
     const updatedPiece = { ...newPieces[idx], ...updates };
+    if (updates.name && updates.hasMechanism === undefined) {
+      updatedPiece.hasMechanism = /valvula|válvula|ventosa|reductora|autobloqueante|hidrante|grifo/i.test(updatedPiece.name);
+    }
+    if ((updates.name || updates.material) && updates.unionCount === undefined) {
+      updatedPiece.unionCount = /union|unión|brida|flange|junta|perno|tubo|cañer|hormig|anclaje/i.test(updatedPiece.name) ? 0 : 2;
+    }
 
     // Auto-search weight if a property changed and weight is 0 or wasn't provided directly
     if (updates.name || updates.diameter || updates.material) {
@@ -200,7 +231,7 @@ const NodeCard: React.FC<NodeCardProps> = ({ node, index, onUpdate, onRemove, on
   };
 
   const handleAddPiece = () => {
-    onUpdate({ pieces: [...node.pieces, { name: '', material: NodeMaterial.Otro, diameter: '', quantity: 1, union: '', weight: 0 }] });
+    onUpdate({ pieces: [...node.pieces, { name: '', material: NodeMaterial.Otro, diameter: '', quantity: 1, union: '', unionCount: 0, hasMechanism: false, weight: 0 }] });
   };
 
   const handleRemovePiece = (idx: number) => {
@@ -218,24 +249,7 @@ const NodeCard: React.FC<NodeCardProps> = ({ node, index, onUpdate, onRemove, on
   };
 
   const formatIdsForDisplay = (idStr: string, type: string) => {
-    const matches = idStr.match(/\d+/g);
-    if (!matches) return idStr;
-
-    const prefixMap: Record<string, string> = {
-      'Corte': 'C',
-      'Ventosa': 'V',
-      'Desague': 'D',
-      'Reductora': 'R',
-      'Grifo': 'G',
-      'Numerico': ''
-    };
-
-    const prefix = prefixMap[type] || '';
-
-    return matches.map(m => {
-      const num = parseInt(m, 10);
-      return prefix ? `${prefix}-${num}` : m.padStart(2, '0');
-    }).join(', ');
+    return idStr;
   };
 
   return (
@@ -299,9 +313,9 @@ const NodeCard: React.FC<NodeCardProps> = ({ node, index, onUpdate, onRemove, on
             <tr>
               <th className="px-6 py-5 font-black">Pieza</th>
               <th className="px-6 py-5 font-black text-center">Mat.</th>
-              <th className="px-6 py-5 font-black text-center">Diám.</th>
+              <th className="px-6 py-5 font-black text-center">Diám. / Uniones</th>
               <th className="px-6 py-5 font-black text-center">Peso(kg)</th>
-              <th className="px-6 py-5 font-black text-right pr-12">Cant.</th>
+              <th className="px-6 py-5 font-black text-right pr-12">Cant. / Mec.</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -418,8 +432,11 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({ analysisId, result, searc
 
       <div className="w-full">
         {filteredNodes.map((node, idx) => {
-          const nodeNumericIds: string[] = node.id.match(/\d+/g) || [];
-          const isDuplicate = nodeNumericIds.some(id => duplicateIds.has(`${node.type}:${id.toLowerCase()}`));
+          const isDuplicate = node.id
+            .split(',')
+            .map(id => id.trim())
+            .filter(Boolean)
+            .some(id => duplicateIds.has(`${node.type || 'Otro'}:${normalizeText(id)}`));
 
           return (
             <NodeCard
@@ -442,4 +459,3 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({ analysisId, result, searc
 };
 
 export default ResultDisplay;
-

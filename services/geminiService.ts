@@ -1,22 +1,23 @@
-
 // @google/genai SDK used for hydraulic plan analysis
 import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
 import { AnalysisResult } from "../types.ts";
 
 const SYSTEM_PROMPT = `
-Eres un Asistente Experto en Interpretación de Planos Hidráulicos y Gestión de Inventarios de Redes de Agua Potable.
-Tu objetivo es analizar imágenes de "Cuadros de Nudos" y extraer un inventario técnico 100% preciso, sin omitir ningún número de nudo.
+Eres un Asistente Experto en Interpretacion de Planos Hidraulicos y Gestion de Inventarios de Redes de Agua Potable.
+Tu objetivo es analizar imagenes de "Cuadros de Nudos" y extraer un inventario tecnico 100% preciso, sin omitir ningun numero de nudo.
 
-REGLAS CRÍTICAS DE ESCANEO:
-1. IDENTIFICACIÓN DE NUDOS: Debes buscar números correlativos (01, 02, 03...) en títulos, subtítulos, dentro de paréntesis (ej: "(01, 02, 03)") y en etiquetas laterales. NO omitas nudos.
-2. CORRELATIVIDAD: Verifica que la secuencia sea lógica. Si detectas un salto (ej: del 05 al 08), realiza un segundo escaneo profundo en la imagen para encontrar los números intermedios.
-3. UNIFICACIÓN DE ESQUEMAS: Si encuentras dos o más bloques de dibujo/detalles gráficos que son VISUALMENTE IDÉNTICOS pero corresponden a diferentes nudos (ej: un detalle para "01, 02" y otro detalle idéntico para "03, 04"), genera UN SOLO objeto 'HydraulicNode'.
-   - En el campo 'id', pon la lista completa de nudos (ej: "01, 02, 03, 04").
-   - En el campo 'sourceGroupings', incluye un array de strings donde cada string sea el texto de identificación de cada bloque de dibujo independiente encontrado (ej: ["01, 02", "03, 04"]). 
+REGLAS CRITICAS DE ESCANEO:
+1. IDENTIFICACION DE NUDOS: Debes buscar numeros correlativos (01, 02, 03...) y nomenclaturas alfanumericas exactas (ej: "G-01", "CV-1", "CD-2") en titulos, subtitulos, dentro de parentesis y en etiquetas laterales. NO omitas nudos.
+   - En el campo 'id', conserva exactamente la nomenclatura del plano. No conviertas "G-01" a "C-01", no conviertas "CV-1" a "V-1" y no cambies prefijos propios del proyecto.
+   - Usa el campo 'type' solo como clasificacion general. Si la nomenclatura no calza claramente con los tipos definidos, usa "Camara" u "Otro".
+2. CORRELATIVIDAD: Verifica que la secuencia sea logica. Si detectas un salto (ej: del 05 al 08), realiza un segundo escaneo profundo en la imagen para encontrar los numeros intermedios.
+3. UNIFICACION DE ESQUEMAS: Si encuentras dos o mas bloques de dibujo/detalles graficos que son VISUALMENTE IDENTICOS pero corresponden a diferentes nudos (ej: un detalle para "01, 02" y otro detalle identico para "03, 04"), genera UN SOLO objeto 'HydraulicNode'.
+   - En el campo 'id', pon la lista completa de identificadores conservando cada nomenclatura original (ej: "G-01, G-02" o "01, 02, 03, 04").
+   - En el campo 'sourceGroupings', incluye un array de strings donde cada string sea el texto de identificacion de cada bloque de dibujo independiente encontrado (ej: ["01, 02", "03, 04"]).
    - SI EL PLANO YA TRAE UN SOLO DIBUJO PARA VARIOS NUDOS (ej: un dibujo que dice "01 al 05"), el array 'sourceGroupings' debe tener UN solo elemento: ["01 al 05"].
-4. PIEZAS: Extrae Codos (con grados), Tees, Válvulas, Uniones, Reducciones. Identifica Material y Diámetro de cada una.
-5. ANCLAJES: Cuenta los bloques de hormigón (trapecios achurados) específicos de cada detalle.
-6. MATRIZ: La tubería matriz es contexto, no una pieza del nudo.
+4. PIEZAS: Extrae Codos (con grados), Tees, Valvulas, Uniones, Reducciones. Identifica Material y Diametro de cada una. Materiales posibles incluyen HDPE, PVC, Fe Fdo, Acero, Bronce, Hormigon u Otro.
+5. ANCLAJES: Cuenta los bloques de hormigon (trapecios achurados) especificos de cada detalle.
+6. MATRIZ: La tuberia matriz es contexto, no una pieza del nudo.
 
 RESPONDE SIEMPRE EN FORMATO JSON ESTRUCTURADO SIGUIENDO EL SCHEMA PROPORCIONADO.
 `;
@@ -25,13 +26,12 @@ let inFlight = false;
 
 export async function analyzeHydraulicPlan(base64Data: string): Promise<AnalysisResult> {
   if (inFlight) {
-    throw new Error("Análisis en curso. Espera a que termine antes de reintentar.");
+    throw new Error("Analisis en curso. Espera a que termine antes de reintentar.");
   }
 
   inFlight = true;
 
   try {
-    // Initializing Gemini client using process.env.API_KEY directly as per @google/genai guidelines
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
     const mimeTypeMatch = base64Data.match(/^data:([^;]+);base64,/);
@@ -49,9 +49,10 @@ export async function analyzeHydraulicPlan(base64Data: string): Promise<Analysis
           },
           {
             text:
-              "Realiza un análisis exhaustivo y detallado de este cuadro de nudos. " +
-              "Presta especial atención a los números correlativos. Identifica CADA nudo, incluso si comparten el mismo esquema. " +
-              "Si unificas bloques de dibujo idénticos que estaban separados en el plano, refléjalo en 'sourceGroupings' con un elemento por cada bloque original.",
+              "Realiza un analisis exhaustivo y detallado de este cuadro de nudos. " +
+              "Presta especial atencion a los identificadores exactos del plano, incluyendo prefijos como G, CV o CD. " +
+              "Identifica CADA nudo, incluso si comparten el mismo esquema. " +
+              "Si unificas bloques de dibujo identicos que estaban separados en el plano, reflejalo en 'sourceGroupings' con un elemento por cada bloque original.",
           },
         ],
       },
@@ -67,18 +68,18 @@ export async function analyzeHydraulicPlan(base64Data: string): Promise<Analysis
               items: {
                 type: Type.OBJECT,
                 properties: {
-                  id: { type: Type.STRING, description: "Número o lista de números del nudo (ej: '01, 02, 03')" },
-                  sourceGroupings: { 
-                    type: Type.ARRAY, 
+                  id: { type: Type.STRING, description: "Identificador exacto del plano, incluyendo prefijos si existen (ej: '01', 'G-01', 'CV-1', 'CD-2' o '01, 02, 03')" },
+                  sourceGroupings: {
+                    type: Type.ARRAY,
                     items: { type: Type.STRING },
-                    description: "Lista de IDs/rangos por cada bloque de dibujo físico independiente que fue unificado"
+                    description: "Lista de IDs/rangos por cada bloque de dibujo fisico independiente que fue unificado"
                   },
-                  nodeName: { type: Type.STRING, description: "Nombre descriptivo del nudo (ej: CODO DE 90 GRADOS)" },
+                  nodeName: { type: Type.STRING, description: "Nombre descriptivo del nudo o camara segun plano" },
                   type: {
                     type: Type.STRING,
-                    enum: ["Numerico", "Ventosa", "Desague", "Corte", "Reductora"],
+                    enum: ["Numerico", "Ventosa", "Desague", "Corte", "Reductora", "Grifo", "Camara", "Otro"],
                   },
-                  anchorageCount: { type: Type.NUMBER, description: "Cantidad de anclajes de hormigón detectados" },
+                  anchorageCount: { type: Type.NUMBER, description: "Cantidad de anclajes de hormigon detectados" },
                   pieces: {
                     type: Type.ARRAY,
                     items: {
@@ -95,7 +96,7 @@ export async function analyzeHydraulicPlan(base64Data: string): Promise<Analysis
                 },
               },
             },
-            summary: { type: Type.STRING, description: "Resumen técnico de la cantidad de nudos encontrados y unificados" },
+            summary: { type: Type.STRING, description: "Resumen tecnico de la cantidad de nudos encontrados y unificados" },
           },
           required: ["nodes", "summary"],
         },
@@ -103,13 +104,13 @@ export async function analyzeHydraulicPlan(base64Data: string): Promise<Analysis
     });
 
     const text = response.text;
-    if (!text) throw new Error("La IA no devolvió texto.");
+    if (!text) throw new Error("La IA no devolvio texto.");
 
     try {
       return JSON.parse(text) as AnalysisResult;
     } catch (err) {
       console.error("Respuesta cruda (no JSON):", text);
-      throw new Error("El modelo respondió, pero NO devolvió JSON válido.");
+      throw new Error("El modelo respondio, pero NO devolvio JSON valido.");
     }
   } catch (err: any) {
     console.error("Gemini error:", err);

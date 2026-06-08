@@ -3,6 +3,7 @@ import { LibraryNode } from '../types';
 
 interface LibraryModalProps {
   nodes: LibraryNode[];
+  projectNodes?: LibraryNode[];
   onClose: () => void;
   onUseNode: (node: LibraryNode) => void;
   isCategoryActive: boolean;
@@ -30,6 +31,7 @@ const SUGGESTED_PRICES: Record<string, number> = {
 
 const LibraryModal: React.FC<LibraryModalProps> = ({ 
   nodes, 
+  projectNodes = [],
   onClose, 
   onUseNode, 
   isCategoryActive, 
@@ -144,6 +146,11 @@ const LibraryModal: React.FC<LibraryModalProps> = ({
     document.body.removeChild(link);
   };
 
+  const allNodes = [
+    ...projectNodes.map(node => ({ ...node, sourceLabel: 'Proyecto' })),
+    ...nodes.map(node => ({ ...node, sourceLabel: 'Biblioteca' }))
+  ];
+
   return (
     <div className="fixed inset-0 bg-[#002d50]/90 backdrop-blur-md z-[100] flex items-center justify-center p-6">
       <div className="bg-white w-full max-w-4xl rounded-[3rem] overflow-hidden shadow-2xl animate-in zoom-in-95 duration-300 max-h-[90vh] flex flex-col">
@@ -187,14 +194,14 @@ const LibraryModal: React.FC<LibraryModalProps> = ({
           </div>
         </div>
         <div className="flex-grow overflow-y-auto p-10 space-y-4">
-          {nodes.length === 0 ? (
+          {allNodes.length === 0 ? (
             <div className="text-center py-20 text-slate-400">
               <i className="fa-solid fa-box-open text-5xl mb-4"></i>
               <p className="font-bold">Tu biblioteca está vacía.</p>
-              <p className="text-sm">Puedes guardar nudos en la biblioteca desde los resultados del análisis.</p>
+              <p className="text-sm">Puedes guardar nudos en la biblioteca o reutilizar nudos existentes del proyecto activo.</p>
             </div>
           ) : (
-            nodes.map((node) => (
+            allNodes.map((node) => (
               <div key={node.libraryId} className="bg-slate-50 border border-slate-200 p-5 rounded-2xl flex justify-between items-center group">
                 {editingNodeId === node.libraryId ? (
                    <div className="flex-grow flex items-center gap-4">
@@ -211,16 +218,21 @@ const LibraryModal: React.FC<LibraryModalProps> = ({
                 ) : (
                   <>
                     <div>
-                      <h4 className="text-base font-black text-[#004071]">{node.nodeName}</h4>
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-base font-black text-[#004071]">{node.nodeName}</h4>
+                        <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full ${node.sourceLabel === 'Proyecto' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>{node.sourceLabel}</span>
+                      </div>
                       <p className="text-xs text-slate-500 mt-1">
                         {node.pieces.map(p => `${p.quantity}x ${p.name} ${p.diameter}`).join(' | ')}
                       </p>
                     </div>
                      <div className="flex items-center gap-2">
+                        {node.sourceLabel === 'Biblioteca' && (
                         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                             <button onClick={() => handleStartEdit(node)} className="p-2 text-slate-400 hover:text-[#004071]"><i className="fa-solid fa-pen text-xs"></i></button>
                             <button onClick={() => onRemoveNode(node.libraryId)} className="p-2 text-slate-400 hover:text-red-500"><i className="fa-solid fa-trash text-xs"></i></button>
                         </div>
+                        )}
                         <button
                           onClick={() => onUseNode(node)}
                           disabled={!isCategoryActive}
