@@ -78,6 +78,9 @@ const formatUnionDiameterForKind = (unionKind: string, diameter: string) => {
   return diameter;
 };
 
+const formatWeight = (value: number) =>
+  value ? value.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '';
+
 type ReviewNode = HydraulicNode & { categoryName: string; documentName: string };
 type SummaryColumn = {
   key: string;
@@ -189,7 +192,10 @@ const buildMatrix = (project: Project, sourceNodes: ReviewNode[]) => {
     return qty;
   };
 
-  return { columns, totals, grandTotalPieces, totalAnchorages, duplicateKeys, quantityFor };
+  const totalWeightForColumn = (column: SummaryColumn) => (totals.get(column.key) || 0) * (column.weight || 0);
+  const grandTotalWeight = columns.reduce((sum, column) => sum + totalWeightForColumn(column), 0);
+
+  return { columns, totals, grandTotalPieces, totalAnchorages, duplicateKeys, quantityFor, totalWeightForColumn, grandTotalWeight };
 };
 
 const materialBlockClass = (columns: SummaryColumn[], index: number, col: SummaryColumn) => {
@@ -276,14 +282,14 @@ const ProjectReviewModal: React.FC<ProjectReviewModalProps> = ({ project }) => {
       const merges: XLSX.Range[] = [];
       const baseHeaders = ['ID Nudo', 'Nombre Nudo', 'Capitulo', 'Documento'];
 
-      rows.push([...baseHeaders, ...Array(matrix.columns.length).fill(''), 'TOTAL', 'ANCLAJE', 'ALERTAS']);
-      rows.push([...Array(4).fill(''), ...Array(matrix.columns.length).fill(''), '', '', '']);
-      rows.push([...Array(4).fill(''), ...Array(matrix.columns.length).fill(''), '', '', '']);
-      rows.push([...Array(4).fill(''), ...matrix.columns.map(col => col.diameter), '', '', '']);
+      rows.push([...baseHeaders, ...Array(matrix.columns.length).fill(''), 'TOTAL', 'PESO KG', 'ANCLAJE', 'ALERTAS']);
+      rows.push([...Array(4).fill(''), ...Array(matrix.columns.length).fill(''), '', '', '', '']);
+      rows.push([...Array(4).fill(''), ...Array(matrix.columns.length).fill(''), '', '', '', '']);
+      rows.push([...Array(4).fill(''), ...matrix.columns.map(col => col.diameter), '', '', '', '']);
 
       baseHeaders.forEach((_, colIndex) => merges.push({ s: { r: 0, c: colIndex }, e: { r: 3, c: colIndex } }));
       const tailStart = 4 + matrix.columns.length;
-      [tailStart, tailStart + 1, tailStart + 2].forEach(colIndex => merges.push({ s: { r: 0, c: colIndex }, e: { r: 3, c: colIndex } }));
+      [tailStart, tailStart + 1, tailStart + 2, tailStart + 3].forEach(colIndex => merges.push({ s: { r: 0, c: colIndex }, e: { r: 3, c: colIndex } }));
 
       const addHeaderGroups = (rowIndex: number, groups: HeaderGroup[]) => {
         groups.forEach(group => {
@@ -301,9 +307,11 @@ const ProjectReviewModal: React.FC<ProjectReviewModalProps> = ({ project }) => {
         const duplicate = matrix.duplicateKeys.has(`${node.type || 'Otro'}:${normalizeText(node.id)}`);
         const incomplete = node.pieces.some(piece => !piece.name || !piece.material || !piece.diameter || piece.quantity <= 0);
         let rowTotal = 0;
+        let rowWeight = 0;
         const quantities = matrix.columns.map(col => {
           const qty = matrix.quantityFor(node, col);
           if (!col.isUnion) rowTotal += qty;
+          rowWeight += qty * (col.weight || 0);
           return qty || '';
         });
         rows.push([
@@ -313,6 +321,7 @@ const ProjectReviewModal: React.FC<ProjectReviewModalProps> = ({ project }) => {
           node.documentName,
           ...quantities,
           rowTotal || '',
+          rowWeight ? Number(rowWeight.toFixed(2)) : '',
           node.anchorageCount || '',
           [duplicate ? 'ID duplicado' : '', incomplete ? 'Revisar piezas' : ''].filter(Boolean).join(', ')
         ]);
@@ -326,7 +335,33 @@ const ProjectReviewModal: React.FC<ProjectReviewModalProps> = ({ project }) => {
           '',
           ...matrix.columns.map(col => matrix.totals.get(col.key) || ''),
           matrix.grandTotalPieces,
+          matrix.grandTotalWeight ? Number(matrix.grandTotalWeight.toFixed(2)) : '',
           matrix.totalAnchorages,
+          ''
+        ]);
+        rows.push([
+          'PESO UNITARIO KG',
+          '',
+          '',
+          '',
+          ...matrix.columns.map(col => col.weight || ''),
+          '',
+          '',
+          '',
+          ''
+        ]);
+        rows.push([
+          'PESO TOTAL KG',
+          '',
+          '',
+          '',
+          ...matrix.columns.map(col => {
+            const totalWeight = matrix.totalWeightForColumn(col);
+            return totalWeight ? Number(totalWeight.toFixed(2)) : '';
+          }),
+          '',
+          matrix.grandTotalWeight ? Number(matrix.grandTotalWeight.toFixed(2)) : '',
+          '',
           ''
         ]);
       }
@@ -340,6 +375,7 @@ const ProjectReviewModal: React.FC<ProjectReviewModalProps> = ({ project }) => {
         { wch: 20 },
         ...matrix.columns.map(() => ({ wch: 16 })),
         { wch: 12 },
+        { wch: 14 },
         { wch: 12 },
         { wch: 24 }
       ];
@@ -382,6 +418,7 @@ const ProjectReviewModal: React.FC<ProjectReviewModalProps> = ({ project }) => {
                   <th key={`mat-${title}-${group.label}-${group.start}`} colSpan={group.span} className={headerGroupClass(group)}>{group.label}</th>
                 ))}
                 <th rowSpan={4} className="px-3 py-3 min-w-[90px] text-center border-l-4 border-l-[#004071]">TOTAL</th>
+                <th rowSpan={4} className="px-3 py-3 min-w-[110px] text-center">PESO KG</th>
                 <th rowSpan={4} className="px-3 py-3 min-w-[90px] text-center">ANCLAJE</th>
                 <th rowSpan={4} className="px-3 py-3 min-w-[150px]">ALERTAS</th>
               </tr>
@@ -404,12 +441,13 @@ const ProjectReviewModal: React.FC<ProjectReviewModalProps> = ({ project }) => {
             <tbody className="divide-y divide-slate-100">
               {nodes.length === 0 ? (
                 <tr>
-                  <td colSpan={matrix.columns.length + 7} className="px-6 py-14 text-center text-slate-400 font-bold">Sin registros para mostrar.</td>
+                  <td colSpan={matrix.columns.length + 8} className="px-6 py-14 text-center text-slate-400 font-bold">Sin registros para mostrar.</td>
                 </tr>
               ) : nodes.map((node, index) => {
                 const duplicate = matrix.duplicateKeys.has(`${node.type || 'Otro'}:${normalizeText(node.id)}`);
                 const incomplete = node.pieces.some(piece => !piece.name || !piece.material || !piece.diameter || piece.quantity <= 0);
                 let rowTotal = 0;
+                let rowWeight = 0;
                 return (
                   <tr key={`${title}-${node.id}-${index}`} className={duplicate || incomplete ? 'bg-amber-50/60' : 'hover:bg-slate-50'}>
                     <td className="px-4 py-3 font-black text-[#88C13E] w-[140px] min-w-[140px] max-w-[140px] truncate bg-inherit" title={node.id}>{node.id}</td>
@@ -419,9 +457,11 @@ const ProjectReviewModal: React.FC<ProjectReviewModalProps> = ({ project }) => {
                     {matrix.columns.map((col, colIndex) => {
                       const qty = matrix.quantityFor(node, col);
                       if (!col.isUnion) rowTotal += qty;
+                      rowWeight += qty * (col.weight || 0);
                       return <td key={`${title}-${node.id}-${col.key}`} className={`px-3 py-3 text-center font-black ${materialBlockClass(matrix.columns, colIndex, col)} ${col.isUnion ? 'text-blue-700' : 'text-slate-700'}`}>{qty || ''}</td>;
                     })}
                     <td className="px-3 py-3 text-center font-black text-[#004071] border-l-4 border-l-[#004071]">{rowTotal || ''}</td>
+                    <td className="px-3 py-3 text-center font-black text-[#004071]">{formatWeight(rowWeight)}</td>
                     <td className="px-3 py-3 text-center font-black text-slate-600">{node.anchorageCount || ''}</td>
                     <td className="px-3 py-3 text-amber-700 font-bold">{[duplicate ? 'ID duplicado' : '', incomplete ? 'Revisar piezas' : ''].filter(Boolean).join(', ')}</td>
                   </tr>
@@ -435,9 +475,36 @@ const ProjectReviewModal: React.FC<ProjectReviewModalProps> = ({ project }) => {
                   <td></td>
                   {matrix.columns.map((col, colIndex) => <td key={`total-${title}-${col.key}`} className={`px-3 py-3 text-center ${materialBlockClass(matrix.columns, colIndex, col)}`}>{matrix.totals.get(col.key) || ''}</td>)}
                   <td className="px-3 py-3 text-center border-l-4 border-l-white/50">{matrix.grandTotalPieces}</td>
+                  <td className="px-3 py-3 text-center">{formatWeight(matrix.grandTotalWeight)}</td>
                   <td className="px-3 py-3 text-center">{matrix.totalAnchorages}</td>
                   <td></td>
                 </tr>
+              )}
+              {nodes.length > 0 && (
+                <>
+                  <tr className="bg-slate-100 text-[#004071] font-black uppercase">
+                    <td className="px-4 py-3">Peso Unitario kg</td>
+                    <td className="px-4 py-3"></td>
+                    <td></td>
+                    <td></td>
+                    {matrix.columns.map((col, colIndex) => <td key={`unit-weight-${title}-${col.key}`} className={`px-3 py-3 text-center ${materialBlockClass(matrix.columns, colIndex, col)}`}>{formatWeight(col.weight || 0)}</td>)}
+                    <td className="px-3 py-3 text-center border-l-4 border-l-[#004071]"></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                  </tr>
+                  <tr className="bg-slate-50 text-[#004071] font-black uppercase">
+                    <td className="px-4 py-3">Peso Total kg</td>
+                    <td className="px-4 py-3"></td>
+                    <td></td>
+                    <td></td>
+                    {matrix.columns.map((col, colIndex) => <td key={`total-weight-${title}-${col.key}`} className={`px-3 py-3 text-center ${materialBlockClass(matrix.columns, colIndex, col)}`}>{formatWeight(matrix.totalWeightForColumn(col))}</td>)}
+                    <td className="px-3 py-3 text-center border-l-4 border-l-[#004071]"></td>
+                    <td className="px-3 py-3 text-center">{formatWeight(matrix.grandTotalWeight)}</td>
+                    <td></td>
+                    <td></td>
+                  </tr>
+                </>
               )}
             </tbody>
           </table>

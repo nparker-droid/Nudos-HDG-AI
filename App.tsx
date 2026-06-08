@@ -1012,6 +1012,50 @@ const App: React.FC = () => {
     } : p));
   };
 
+  const handleCreateManualSheet = () => {
+    if (!activeProjectId || !activeCategoryId || !activeCategory) return;
+
+    const defaultName = `Lamina manual ${activeCategory.analyses.length + 1}`;
+    const requestedName = window.prompt('Nombre de la lamina manual:', defaultName);
+    if (requestedName === null) return;
+
+    const customName = requestedName.trim() || defaultName;
+    let nextNum = 1;
+    const allNodeIds = activeCategory.analyses.flatMap(a => a.result?.nodes.map(n => n.id) || []);
+    const numbers = allNodeIds.flatMap(idStr => {
+      const matches = idStr.match(/\d+/g);
+      return matches ? matches.map(m => parseInt(m, 10)) : [];
+    }).filter(n => !isNaN(n));
+    if (numbers.length > 0) nextNum = Math.max(...numbers) + 1;
+
+    const formattedId = nextNum.toString().padStart(2, '0');
+    const newNode: HydraulicNode = {
+      id: formattedId,
+      nodeName: `Nudo Manual ${formattedId}`,
+      type: 'Numerico',
+      pieces: [],
+      anchorageCount: 0,
+      isManual: true
+    };
+
+    const manualAnalysis: FileAnalysis = {
+      id: generateId(),
+      image: '',
+      status: 'done',
+      customName,
+      result: {
+        nodes: [newNode],
+        summary: `Lamina manual: ${customName}`
+      }
+    };
+
+    setProjects(prev => prev.map(p => p.id === activeProjectId ? {
+      ...p,
+      categories: p.categories.map(c => c.id === activeCategoryId ? { ...c, analyses: [...c.analyses, manualAnalysis] } : c)
+    } : p));
+    setNotification('Lamina manual creada.');
+  };
+
   const removeAnalysis = (analysisId: string) => {
     if (!activeProjectId || !activeCategoryId) return;
     setDeleteConfirm({ show: true, type: 'analysis', projectId: activeProjectId, analysisId, name: 'Análisis de Imagen' });
@@ -1569,7 +1613,13 @@ const App: React.FC = () => {
                         />
                       );
                     })}
-                    <div className="pt-10 border-t border-slate-200 flex flex-col items-center">
+                    <div className="pt-10 border-t border-slate-200 flex flex-col items-center gap-5">
+                      <button
+                        onClick={handleCreateManualSheet}
+                        className="px-7 py-4 bg-white border-2 border-[#004071] text-[#004071] rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-sm flex items-center gap-3 hover:bg-[#004071] hover:text-white transition-all"
+                      >
+                        <i className="fa-solid fa-pen-to-square text-xs"></i> Agregar lamina manual
+                      </button>
                       <FileUploader onImagesSelected={handleImagesSelected} loading={false} />
                     </div>
                   </div>

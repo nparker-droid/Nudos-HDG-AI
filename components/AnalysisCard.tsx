@@ -38,8 +38,11 @@ const AnalysisCard: React.FC<AnalysisCardProps> = ({
   catalogItems
 }) => {
   const isManual = !analysis.image;
+  const defaultAnalysisName = isManual
+    ? `LAMINA MANUAL N° ${analysis.documentNumber || '-'}`
+    : `DOCUMENTO N° ${analysis.documentNumber || '-'}`;
   const [isEditingName, setIsEditingName] = useState(false);
-  const [tempName, setTempName] = useState(analysis.customName || `DOCUMENTO N° ${analysis.documentNumber || '-'}`);
+  const [tempName, setTempName] = useState(analysis.customName || defaultAnalysisName);
 
   const [isCollapsed, setIsCollapsed] = useState(false);
 
@@ -78,21 +81,19 @@ const AnalysisCard: React.FC<AnalysisCardProps> = ({
           ) : (
             <div className="flex items-center gap-2 group/header">
               <span className="text-[10px] font-black text-[#004071] uppercase tracking-[0.2em]">
-                {analysis.customName || (isManual ? 'Nudo Manual' : `DOCUMENTO N° ${analysis.documentNumber || '-'}`)}
+                {analysis.customName || defaultAnalysisName}
               </span>
-              {!isManual && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setTempName(analysis.customName || `DOCUMENTO N° ${analysis.documentNumber || '-'}`);
-                    setIsEditingName(true);
-                  }}
-                  className="text-slate-300 hover:text-[#88C13E] transition-colors opacity-0 group-hover/header:opacity-100"
-                  title="Renombrar documento"
-                >
-                  <i className="fa-solid fa-pen text-[9px]"></i>
-                </button>
-              )}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setTempName(analysis.customName || defaultAnalysisName);
+                  setIsEditingName(true);
+                }}
+                className="text-slate-300 hover:text-[#88C13E] transition-colors opacity-0 group-hover/header:opacity-100"
+                title="Renombrar lamina"
+              >
+                <i className="fa-solid fa-pen text-[9px]"></i>
+              </button>
             </div>
           )}
         </div>
