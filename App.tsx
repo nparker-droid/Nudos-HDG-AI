@@ -640,99 +640,131 @@ const App: React.FC = () => {
   const generateSummaryCSV = (nodes: HydraulicNode[], filename: string) => {
     if (nodes.length === 0) return alert("No hay nudos para exportar.");
 
-    // Sort nodes by ID while preserving labels from the plans.
     const expandedNodes: HydraulicNode[] = [];
     nodes.forEach(node => {
       const ids = splitNodeIds(node.id);
-      if (ids.length > 1) {
-        ids.forEach(individualId => expandedNodes.push({ ...node, id: individualId }));
-      } else {
-        expandedNodes.push({ ...node, id: ids[0] || node.id });
-      }
+      if (ids.length > 1) ids.forEach(individualId => expandedNodes.push({ ...node, id: individualId }));
+      else expandedNodes.push({ ...node, id: ids[0] || node.id });
     });
-
     expandedNodes.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
 
-    const pieceDetailsMap = new Map<string, { name: string, material: string, diameter: string, union: string, unionCount: number, mechanismGroup: string, weight: number }>();
+    type SummaryColumn = {
+      key: string;
+      category: string;
+      material: string;
+      name: string;
+      diameter: string;
+      mechanismGroup: string;
+      weight: number;
+      isUnion: boolean;
+    };
+
+    const pieceColumns = new Map<string, SummaryColumn>();
+    const unionColumns = new Map<string, SummaryColumn>();
+
+    const ensurePieceColumn = (piece: Piece) => {
+      const normalizedPiece = withPieceDefaults(piece);
+      const normalizedName = normalizedPiece.name ? normalizedPiece.name.trim().toUpperCase() : '';
+      const mechanismGroup = normalizedPiece.hasMechanism ? 'CON MECANISMO' : 'SIN MECANISMO';
+      const key = `PIEZA|${normalizedPiece.material}|${mechanismGroup}|${normalizedName}|${normalizedPiece.diameter}`;
+      if (!pieceColumns.has(key)) {
+        pieceColumns.set(key, {
+          key,
+          category: String(normalizedPiece.material || 'OTRO'),
+          material: String(normalizedPiece.material || 'OTRO'),
+          name: normalizedName,
+          diameter: normalizedPiece.diameter,
+          mechanismGroup,
+          weight: normalizedPiece.weight ?? getEstimatedWeight(normalizedName, normalizedPiece.diameter, normalizedPiece.material, catalogItems),
+          isUnion: false
+        });
+      }
+      return key;
+    };
+
+    const ensureUnionColumn = (piece: Piece) => {
+      const normalizedPiece = withPieceDefaults(piece);
+      const unionCount = getPieceUnionCount(normalizedPiece);
+      if (unionCount <= 0) return null;
+      const unionKind = normalizedPiece.union || getUnionKindForPiece(normalizedPiece, activeProject);
+      const key = `UNION|${unionKind}|${normalizedPiece.diameter}`;
+      if (!unionColumns.has(key)) {
+        unionColumns.set(key, {
+          key,
+          category: 'UNIONES',
+          material: 'UNIONES',
+          name: `UNION ${unionKind}`,
+          diameter: normalizedPiece.diameter,
+          mechanismGroup: 'NO APLICA',
+          weight: 0,
+          isUnion: true
+        });
+      }
+      return key;
+    };
+
     expandedNodes.forEach(node => {
-      node.pieces.forEach(p => {
-        const normalizedPiece = withPieceDefaults(p);
-        const normalizedName = normalizedPiece.name ? normalizedPiece.name.trim().toUpperCase() : '';
-        const unionKind = normalizedPiece.union || getUnionKindForPiece(normalizedPiece, activeProject);
-        const unionCount = getPieceUnionCount(normalizedPiece);
-        const mechanismGroup = normalizedPiece.hasMechanism ? 'CON MECANISMO' : 'SIN MECANISMO';
-        const key = `${normalizedPiece.material}|${mechanismGroup}|${normalizedName}|${unionKind}|${unionCount}|${normalizedPiece.diameter}`;
-        if (!pieceDetailsMap.has(key)) {
-          const weightValue = (normalizedPiece.weight !== undefined && normalizedPiece.weight !== null) ? normalizedPiece.weight : getEstimatedWeight(normalizedName, normalizedPiece.diameter, normalizedPiece.material, catalogItems);
-          pieceDetailsMap.set(key, {
-            name: normalizedName,
-            material: normalizedPiece.material,
-            diameter: normalizedPiece.diameter,
-            union: unionKind,
-            unionCount,
-            mechanismGroup,
-            weight: weightValue
-          });
-        } else {
-          const current = pieceDetailsMap.get(key)!;
-          // Only update if current is 0 or undefined, but respect if it was set to 0 explicitly later? 
-          // Actually if we find another node with the same key but a real weight, we might want it.
-          // However, the user says "respect 0".
-          if (p.weight !== undefined && p.weight !== null && p.weight !== current.weight) {
-            current.weight = p.weight;
-          }
-        }
+      node.pieces.forEach(piece => {
+        ensurePieceColumn(piece);
+        ensureUnionColumn(piece);
       });
     });
 
-    const uniquePieceKeys = Array.from(pieceDetailsMap.keys()).sort((a, b) => {
-      const matA = pieceDetailsMap.get(a)!.material;
-      const matB = pieceDetailsMap.get(b)!.material;
-      if (matA !== matB) return matA.localeCompare(matB);
-      return a.localeCompare(b);
+    const pieceKeys = Array.from(pieceColumns.keys()).sort((a, b) => {
+      const ca = pieceColumns.get(a)!;
+      const cb = pieceColumns.get(b)!;
+      return ca.material.localeCompare(cb.material) || ca.mechanismGroup.localeCompare(cb.mechanismGroup) || ca.name.localeCompare(cb.name) || ca.diameter.localeCompare(cb.diameter, undefined, { numeric: true });
     });
+    const unionKeys = Array.from(unionColumns.keys()).sort((a, b) => {
+      const ca = unionColumns.get(a)!;
+      const cb = unionColumns.get(b)!;
+      return ca.name.localeCompare(cb.name) || ca.diameter.localeCompare(cb.diameter, undefined, { numeric: true });
+    });
+    const allKeys = [...pieceKeys, ...unionKeys];
+    const getColumn = (key: string) => pieceColumns.get(key) || unionColumns.get(key)!;
+
+    const totalQuantitiesPerColumn = new Map<string, number>();
+    allKeys.forEach(k => totalQuantitiesPerColumn.set(k, 0));
 
     let csvContent = "\ufeff";
     csvContent += "ID Nudo;Nombre Nudo;";
-    uniquePieceKeys.forEach(k => csvContent += `${pieceDetailsMap.get(k)?.material};`);
+    allKeys.forEach(k => csvContent += `${getColumn(k).category};`);
     csvContent += "TOTAL PIEZAS;ANCLAJE\n";
 
     csvContent += ";;";
-    uniquePieceKeys.forEach(k => csvContent += `${pieceDetailsMap.get(k)?.name};`);
+    allKeys.forEach(k => csvContent += `${getColumn(k).name};`);
     csvContent += ";\n";
 
     csvContent += ";;";
-    uniquePieceKeys.forEach(k => {
-      const detail = pieceDetailsMap.get(k);
-      csvContent += `${detail?.diameter || ''} / U:${detail?.unionCount || 0} ${detail?.union || ''};`;
-    });
+    allKeys.forEach(k => csvContent += `${getColumn(k).diameter};`);
     csvContent += ";\n";
 
     csvContent += "MECANISMO;;";
-    uniquePieceKeys.forEach(k => csvContent += `${pieceDetailsMap.get(k)?.mechanismGroup || ''};`);
+    allKeys.forEach(k => csvContent += `${getColumn(k).mechanismGroup};`);
     csvContent += ";\n";
 
-    const totalQuantitiesPerPiece = new Map<string, number>();
-    uniquePieceKeys.forEach(k => totalQuantitiesPerPiece.set(k, 0));
     let grandTotalPieces = 0;
     let totalAnchorages = 0;
 
     expandedNodes.forEach(node => {
+      const quantities = new Map<string, number>();
+      node.pieces.forEach(piece => {
+        const pieceKey = ensurePieceColumn(piece);
+        const normalizedPiece = withPieceDefaults(piece);
+        quantities.set(pieceKey, (quantities.get(pieceKey) || 0) + (normalizedPiece.quantity || 0));
+        const unionKey = ensureUnionColumn(piece);
+        if (unionKey) {
+          quantities.set(unionKey, (quantities.get(unionKey) || 0) + ((normalizedPiece.quantity || 0) * getPieceUnionCount(normalizedPiece)));
+        }
+      });
+
       csvContent += `${node.id};${node.nodeName};`;
       let rowSum = 0;
-      uniquePieceKeys.forEach(k => {
-        const found = node.pieces.find(p => {
-          const normalizedPiece = withPieceDefaults(p);
-          const pName = normalizedPiece.name ? normalizedPiece.name.trim().toUpperCase() : '';
-          const unionKind = normalizedPiece.union || getUnionKindForPiece(normalizedPiece, activeProject);
-          const unionCount = getPieceUnionCount(normalizedPiece);
-          const mechanismGroup = normalizedPiece.hasMechanism ? 'CON MECANISMO' : 'SIN MECANISMO';
-          return `${normalizedPiece.material}|${mechanismGroup}|${pName}|${unionKind}|${unionCount}|${normalizedPiece.diameter}` === k;
-        });
-        const qty = found ? found.quantity : 0;
+      allKeys.forEach(k => {
+        const qty = quantities.get(k) || 0;
         csvContent += `${qty || ''};`;
-        rowSum += qty;
-        totalQuantitiesPerPiece.set(k, totalQuantitiesPerPiece.get(k)! + qty);
+        if (!getColumn(k).isUnion) rowSum += qty;
+        totalQuantitiesPerColumn.set(k, totalQuantitiesPerColumn.get(k)! + qty);
       });
       csvContent += `${rowSum};${node.anchorageCount || 0}\n`;
       grandTotalPieces += rowSum;
@@ -741,22 +773,18 @@ const App: React.FC = () => {
 
     csvContent += "\n";
     csvContent += "CANTIDAD TOTAL;;";
-    uniquePieceKeys.forEach(k => {
-      csvContent += `${totalQuantitiesPerPiece.get(k)};`;
-    });
+    allKeys.forEach(k => csvContent += `${totalQuantitiesPerColumn.get(k)};`);
     csvContent += `${grandTotalPieces};${totalAnchorages}\n`;
 
     csvContent += "PESO UNITARIO (kg);;";
-    uniquePieceKeys.forEach(k => {
-      csvContent += `${pieceDetailsMap.get(k)?.weight.toString().replace('.', ',')};`;
-    });
+    allKeys.forEach(k => csvContent += `${getColumn(k).weight.toString().replace('.', ',')};`);
     csvContent += ";\n";
 
     csvContent += "PESO TOTAL (kg);;";
     let grandTotalWeight = 0;
-    uniquePieceKeys.forEach(k => {
-      const q = totalQuantitiesPerPiece.get(k)!;
-      const w = pieceDetailsMap.get(k)?.weight || 0;
+    allKeys.forEach(k => {
+      const q = totalQuantitiesPerColumn.get(k)!;
+      const w = getColumn(k).weight || 0;
       const subTotalW = q * w;
       csvContent += `${subTotalW.toFixed(2).replace('.', ',')};`;
       grandTotalWeight += subTotalW;
@@ -773,7 +801,6 @@ const App: React.FC = () => {
     document.body.removeChild(link);
     setNotification('Tabla de Resumen Exportada.');
   };
-
   const handleExportSummaryTable = () => {
     if (!activeCategory) return;
     const rawNodes = activeCategory.analyses.flatMap(a => a.result?.nodes || []);

@@ -35,7 +35,7 @@ const PieceRow: React.FC<PieceRowProps> = ({ piece, onUpdate, onRemove, catalogI
   const [localWeight, setLocalWeight] = useState(piece.weight !== undefined ? piece.weight.toString().replace('.', ',') : '');
 
   const isIncomplete = !piece.name || !piece.material || !piece.diameter || piece.quantity <= 0;
-  const inferredUnionCount = piece.unionCount ?? (piece.name && !/(union|unión|brida|flange|junta|perno|tubo|cañer|hormig|anclaje)/i.test(piece.name) ? 2 : 0);
+  const inferredUnionCount = piece.unionCount ?? (piece.name && !/(union|brida|flange|junta|perno|tubo|caner|caner|hormig|anclaje)/i.test(piece.name) ? 2 : 0);
 
   useEffect(() => {
     const parentWeightStr = piece.weight !== undefined ? piece.weight.toString().replace('.', ',') : '';
@@ -54,33 +54,17 @@ const PieceRow: React.FC<PieceRowProps> = ({ piece, onUpdate, onRemove, catalogI
   };
 
   const attemptCatalogMatch = () => {
-    console.log("🔍 Iniciando búsqueda en catálogo...");
-    console.log("📦 Cantidad de items en catálogo:", catalogItems?.length || 0);
-    console.log("🧩 Datos de la pieza:", {
-      name: piece.name,
-      diameter: piece.diameter,
-      material: piece.material
-    });
-
     if (!catalogItems || catalogItems.length === 0) {
-      alert("⚠️ Tu catálogo está vacío o no se ha cargado correctamente.\n\nPor favor, abre el Catálogo de Piezas, presiona VACIAR CATÁLOGO y vuelve a IMPORTAR tu archivo CSV para asegurar que los datos estén frescos.");
+      alert('Tu catalogo esta vacio o no se ha cargado correctamente.');
       return;
     }
-
     if (!piece.name || !piece.diameter || !piece.material) {
-      alert("Para buscar en el catálogo, la pieza debe tener Nombre, Material y Diámetro.");
+      alert('Para buscar en el catalogo, la pieza debe tener Nombre, Material y Diametro.');
       return;
     }
-
     const matchWeight = findWeightInCatalog(piece.name, piece.diameter, piece.material, catalogItems);
-
-    if (matchWeight !== null) {
-      console.log("✅ Match encontrado! Peso:", matchWeight);
-      onUpdate({ weight: matchWeight });
-    } else {
-      console.warn("❌ No se encontró coincidencia exacta.");
-      alert(`No se encontró el peso exacto en el catálogo para:\n"${piece.name} ${piece.material} ${piece.diameter}"\n\nTips:\n1. Revisa que el nombre en el catálogo sea similar.\n2. El catálogo actualmente tiene ${catalogItems.length} ítems.\n3. Intenta escribir el diámetro de otra forma (ej. si pusiste 75mm, prueba con 2 1/2").`);
-    }
+    if (matchWeight !== null) onUpdate({ weight: matchWeight });
+    else alert(`No se encontro el peso exacto en el catalogo para:\n"${piece.name} ${piece.material} ${piece.diameter}"`);
   };
 
   return (
@@ -95,9 +79,7 @@ const PieceRow: React.FC<PieceRowProps> = ({ piece, onUpdate, onRemove, catalogI
               onChange={e => onUpdate({ name: e.target.value.toUpperCase() })}
               className="bg-white border rounded px-2 py-1 w-full font-bold text-slate-700"
               onBlur={() => {
-                if (piece.name) {
-                  onUpdate({ name: piece.name.trim().toUpperCase() });
-                }
+                if (piece.name) onUpdate({ name: piece.name.trim().toUpperCase() });
                 setIsEditing(false);
               }}
               list="shared-piece-suggestions"
@@ -111,61 +93,57 @@ const PieceRow: React.FC<PieceRowProps> = ({ piece, onUpdate, onRemove, catalogI
         </div>
       </td>
       <td className="px-6 py-4 text-center">
-        <select value={piece.material} onChange={e => onUpdate({ material: e.target.value as NodeMaterial })} className={`text-[10px] font-black px-2 py-1 rounded uppercase tracking-widest outline-none border-none ${!piece.material ? 'bg-amber-200 text-amber-900' : 'bg-slate-100'}`}>
+        <select value={piece.material} onChange={e => onUpdate({ material: e.target.value as NodeMaterial })} className={`w-full text-[10px] font-black px-2 py-1 rounded uppercase tracking-widest outline-none border-none ${!piece.material ? 'bg-amber-200 text-amber-900' : 'bg-slate-100'}`}>
           <option value="">?</option>
           {Object.values(NodeMaterial).map(m => <option key={m} value={m}>{m}</option>)}
         </select>
       </td>
       <td className="px-6 py-4 text-center">
-        <div className="flex flex-col items-center gap-1">
-          <input
-            type="text"
-            placeholder='Ej: 3", 75mm, 160mm'
-            value={piece.diameter}
-            onChange={e => onUpdate({ diameter: e.target.value })}
-            className={`bg-transparent border-none text-center font-mono font-black text-[#004071] w-full outline-none placeholder:text-[9px] placeholder:font-normal placeholder:opacity-50 ${!piece.diameter ? 'placeholder:text-amber-500' : ''}`}
-          />
-          <label className="flex items-center gap-1 text-[8px] font-black text-slate-400 uppercase">
-            Uniones
-            <input
-              type="number"
-              min={0}
-              value={inferredUnionCount}
-              onChange={e => onUpdate({ unionCount: Math.max(0, parseInt(e.target.value, 10) || 0) })}
-              className="w-10 bg-slate-50 border border-slate-100 rounded text-center text-[9px] text-[#004071] font-black"
-            />
-          </label>
-        </div>
+        <input
+          type="text"
+          placeholder='Ej: 3", 75mm, 160mm'
+          value={piece.diameter}
+          onChange={e => onUpdate({ diameter: e.target.value })}
+          className={`bg-transparent border-none text-center font-mono font-black text-[#004071] w-full outline-none placeholder:text-[9px] placeholder:font-normal placeholder:opacity-50 ${!piece.diameter ? 'placeholder:text-amber-500' : ''}`}
+        />
       </td>
       <td className="px-6 py-4 text-center group/weight relative">
-        <input type="text" placeholder="0,00" value={localWeight} onChange={e => handleWeightChange(e.target.value)} className="bg-transparent border-none text-center font-mono text-[11px] text-slate-500 w-16 outline-none" />
+        <input type="text" placeholder="0,00" value={localWeight} onChange={e => handleWeightChange(e.target.value)} className="bg-transparent border-none text-center font-mono text-[11px] text-slate-500 w-full outline-none" />
         <button
           onClick={attemptCatalogMatch}
-          className="absolute -right-4 top-1/2 -translate-y-1/2 opacity-0 group-hover/weight:opacity-100 transition-opacity bg-[#004071] text-[#D9E021] rounded-full w-5 h-5 flex items-center justify-center shadow-lg hover:scale-110"
-          title="Buscar en Catálogo"
+          className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover/weight:opacity-100 transition-opacity bg-[#004071] text-[#D9E021] rounded-full w-5 h-5 flex items-center justify-center shadow-lg hover:scale-110"
+          title="Buscar en catalogo"
         >
           <i className="fa-solid fa-book-open text-[8px]"></i>
         </button>
       </td>
       <td className="px-6 py-4 text-right">
-        <div className="flex items-center justify-end gap-4">
-          <label className="flex items-center gap-1 text-[8px] font-black text-slate-400 uppercase" title="Pieza con mecanismo">
-            <input
-              type="checkbox"
-              checked={!!piece.hasMechanism}
-              onChange={e => onUpdate({ hasMechanism: e.target.checked })}
-              className="h-3 w-3 rounded border-slate-300 text-[#004071]"
-            />
-            Mec.
-          </label>
-          <input type="number" value={piece.quantity} onChange={e => onUpdate({ quantity: parseInt(e.target.value) || 0 })} className={`bg-transparent border-none text-right font-black w-12 outline-none text-base ${piece.quantity <= 0 ? 'text-amber-600' : 'text-[#004071]'}`} />
+        <input type="number" value={piece.quantity} onChange={e => onUpdate({ quantity: parseInt(e.target.value) || 0 })} className={`bg-transparent border-none text-right font-black w-full outline-none text-base ${piece.quantity <= 0 ? 'text-amber-600' : 'text-[#004071]'}`} />
+      </td>
+      <td className="px-6 py-4 text-center">
+        <input
+          type="checkbox"
+          checked={!!piece.hasMechanism}
+          onChange={e => onUpdate({ hasMechanism: e.target.checked })}
+          className="h-4 w-4 rounded border-slate-300 text-[#004071]"
+          title="Pieza con mecanismo"
+        />
+      </td>
+      <td className="px-6 py-4 text-center">
+        <div className="flex items-center justify-center gap-3">
+          <input
+            type="number"
+            min={0}
+            value={inferredUnionCount}
+            onChange={e => onUpdate({ unionCount: Math.max(0, parseInt(e.target.value, 10) || 0) })}
+            className="w-14 bg-slate-50 border border-slate-100 rounded text-center text-[11px] text-[#004071] font-black"
+          />
           <button onClick={onRemove} className="opacity-0 group-hover/row:opacity-100 text-red-300 hover:text-red-500 transition-opacity"><i className="fa-solid fa-trash text-[10px]"></i></button>
         </div>
       </td>
     </tr>
   );
 };
-
 interface NodeCardProps {
   node: HydraulicNode;
   index: number;
@@ -308,14 +286,25 @@ const NodeCard: React.FC<NodeCardProps> = ({ node, index, onUpdate, onRemove, on
         </div>
       </div>
       <div className="overflow-x-auto w-full">
-        <table className="w-full text-left text-[13px]">
+        <table className="w-full table-fixed text-left text-[13px]">
+          <colgroup>
+            <col className="w-[30%]" />
+            <col className="w-[12%]" />
+            <col className="w-[16%]" />
+            <col className="w-[12%]" />
+            <col className="w-[10%]" />
+            <col className="w-[10%]" />
+            <col className="w-[10%]" />
+          </colgroup>
           <thead className="bg-[#f8fafc] text-slate-400 uppercase text-[9px] tracking-[0.2em]">
             <tr>
               <th className="px-6 py-5 font-black">Pieza</th>
               <th className="px-6 py-5 font-black text-center">Mat.</th>
-              <th className="px-6 py-5 font-black text-center">Diám. / Uniones</th>
+              <th className="px-6 py-5 font-black text-center">Diam.</th>
               <th className="px-6 py-5 font-black text-center">Peso(kg)</th>
-              <th className="px-6 py-5 font-black text-right pr-12">Cant. / Mec.</th>
+              <th className="px-6 py-5 font-black text-right">Cant.</th>
+              <th className="px-6 py-5 font-black text-center">Mec.</th>
+              <th className="px-6 py-5 font-black text-center">Uniones</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">

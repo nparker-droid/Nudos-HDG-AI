@@ -127,11 +127,17 @@ const Sidebar: React.FC<SidebarProps> = ({
         {projects.map(p => (
           <div key={p.id} className="group/project">
             <div
-              onClick={() => onToggleProject(p.id)}
+              onClick={() => onOpenProjectReview(p.id)}
               className={`flex items-center justify-between p-4 rounded-2xl cursor-pointer transition-all ${activeProjectId === p.id ? 'bg-[#004071] text-white shadow-lg' : 'hover:bg-slate-50 text-slate-600'}`}
             >
               <div className="flex items-center gap-3 overflow-hidden">
-                <i className={`fa-solid ${activeProjectId === p.id ? 'fa-chevron-down' : 'fa-chevron-right'} text-[10px] ${activeProjectId === p.id ? 'text-[#D9E021]' : 'opacity-40'}`}></i>
+                <button
+                  onClick={(e) => { e.stopPropagation(); onToggleProject(p.id); }}
+                  className={`w-5 h-5 flex items-center justify-center rounded hover:bg-white/10 ${activeProjectId === p.id ? 'text-[#D9E021]' : 'opacity-40'}`}
+                  title={activeProjectId === p.id ? 'Contraer capitulos' : 'Desplegar capitulos'}
+                >
+                  <i className={`fa-solid ${activeProjectId === p.id ? 'fa-chevron-down' : 'fa-chevron-right'} text-[10px]`}></i>
+                </button>
                 <i className={`fa-solid fa-folder text-[14px] ${activeProjectId === p.id ? 'text-[#D9E021]' : 'opacity-40'}`}></i>
                 <div className="flex flex-col overflow-hidden">
                   <span className="text-[12px] font-black truncate uppercase tracking-tighter">{p.name}</span>
@@ -139,7 +145,6 @@ const Sidebar: React.FC<SidebarProps> = ({
                 </div>
               </div>
               <div className="flex items-center gap-2 opacity-0 group-hover/project:opacity-100 transition-opacity">
-                <button onClick={(e) => { e.stopPropagation(); onOpenProjectReview(p.id); }} className="p-1 hover:text-[#88C13E]" title="Revision general"><i className="fa-solid fa-table-list text-[10px]"></i></button>
                 <button onClick={(e) => onExportProject(p.id, e)} className="p-1 hover:text-[#88C13E]"><i className="fa-solid fa-download text-[10px]"></i></button>
                 <button onClick={(e) => { e.stopPropagation(); onOpenEditProject(p.id); }} className="p-1 hover:text-[#D9E021]"><i className="fa-solid fa-gear text-[10px]"></i></button>
                 <button onClick={(e) => onDeleteProject(p.id, e)} className="p-1 hover:text-red-400"><i className="fa-solid fa-trash-can text-[10px]"></i></button>
