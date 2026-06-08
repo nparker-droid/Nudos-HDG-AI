@@ -111,6 +111,49 @@ const getPieceUnionCount = (piece: Piece) => {
   return shouldAutoAddUnions(piece) ? 2 : 0;
 };
 
+const extractDiameterParts = (diameter: string) => {
+  const matches = (diameter || '').match(/\d+(?:[,.]\d+)?/g) || [];
+  return matches.map(m => m.replace(',', '.')).filter(Boolean);
+};
+
+const getUnionBreakdownForPiece = (piece: Piece, project?: Project) => {
+  if (!shouldAutoAddUnions(piece) && typeof piece.unionCount !== 'number') return [];
+  const name = normalizeText(piece.name || '');
+  const diameters = extractDiameterParts(piece.diameter);
+  const fallbackDiameter = piece.diameter || 'S/D';
+  const unionKind = piece.union || getUnionKindForPiece(piece, project);
+
+  const add = (map: Map<string, number>, diameter: string, count: number) => {
+    if (count <= 0) return;
+    const key = diameter || fallbackDiameter;
+    map.set(key, (map.get(key) || 0) + count);
+  };
+
+  const byDiameter = new Map<string, number>();
+  if (name.includes('TEE')) {
+    if (diameters.length >= 3) {
+      diameters.slice(0, 3).forEach(d => add(byDiameter, d, 1));
+    } else if (diameters.length >= 2) {
+      add(byDiameter, diameters[0], 2);
+      add(byDiameter, diameters[1], 1);
+    } else {
+      add(byDiameter, diameters[0] || fallbackDiameter, 3);
+    }
+  } else if (name.includes('REDUCCION') || name.includes('REDUCCIÓN')) {
+    if (diameters.length >= 2) {
+      add(byDiameter, diameters[0], 1);
+      add(byDiameter, diameters[1], 1);
+    } else {
+      add(byDiameter, diameters[0] || fallbackDiameter, 2);
+    }
+  } else {
+    const total = typeof piece.unionCount === 'number' ? piece.unionCount : getPieceUnionCount(piece);
+    add(byDiameter, diameters[0] || fallbackDiameter, total);
+  }
+
+  return Array.from(byDiameter.entries()).map(([diameter, count]) => ({ unionKind, diameter, count }));
+};
+
 const withPieceDefaults = (piece: Piece): Piece => ({
   ...piece,
   hasMechanism: piece.hasMechanism ?? inferHasMechanism(piece),
@@ -589,11 +632,11 @@ const App: React.FC = () => {
             });
           }
 
-          if (unionCount > 0) {
-            const unionName = `UNION ${unionKind} ${normalizedPiece.diameter}`.trim();
-            const unionKey = `${unionName}-${normalizedPiece.diameter}`.toUpperCase();
+          getUnionBreakdownForPiece(normalizedPiece, activeProject).forEach(unionPart => {
+            const unionName = `UNION ${unionPart.unionKind} ${unionPart.diameter}`.trim();
+            const unionKey = `${unionName}-${unionPart.diameter}`.toUpperCase();
             const existingUnion = mGroup.pieceMap.get(unionKey);
-            const unionQty = qty * unionCount;
+            const unionQty = qty * unionPart.count;
             if (existingUnion) {
               existingUnion.quantity += unionQty;
             } else {
@@ -605,7 +648,7 @@ const App: React.FC = () => {
                 totalWeight: 0
               });
             }
-          }
+          });
         });
       });
     });
@@ -682,19 +725,15 @@ const App: React.FC = () => {
       return key;
     };
 
-    const ensureUnionColumn = (piece: Piece) => {
-      const normalizedPiece = withPieceDefaults(piece);
-      const unionCount = getPieceUnionCount(normalizedPiece);
-      if (unionCount <= 0) return null;
-      const unionKind = normalizedPiece.union || getUnionKindForPiece(normalizedPiece, activeProject);
-      const key = `UNION|${unionKind}|${normalizedPiece.diameter}`;
+    const ensureUnionColumn = (unionKind: string, diameter: string) => {
+      const key = `UNION|${unionKind}|${diameter}`;
       if (!unionColumns.has(key)) {
         unionColumns.set(key, {
           key,
           category: 'UNIONES',
           material: 'UNIONES',
           name: `UNION ${unionKind}`,
-          diameter: normalizedPiece.diameter,
+          diameter,
           mechanismGroup: 'NO APLICA',
           weight: 0,
           isUnion: true
@@ -706,7 +745,7 @@ const App: React.FC = () => {
     expandedNodes.forEach(node => {
       node.pieces.forEach(piece => {
         ensurePieceColumn(piece);
-        ensureUnionColumn(piece);
+        getUnionBreakdownForPiece(withPieceDefaults(piece), activeProject).forEach(part => ensureUnionColumn(part.unionKind, part.diameter));
       });
     });
 
@@ -752,10 +791,10 @@ const App: React.FC = () => {
         const pieceKey = ensurePieceColumn(piece);
         const normalizedPiece = withPieceDefaults(piece);
         quantities.set(pieceKey, (quantities.get(pieceKey) || 0) + (normalizedPiece.quantity || 0));
-        const unionKey = ensureUnionColumn(piece);
-        if (unionKey) {
-          quantities.set(unionKey, (quantities.get(unionKey) || 0) + ((normalizedPiece.quantity || 0) * getPieceUnionCount(normalizedPiece)));
-        }
+        getUnionBreakdownForPiece(normalizedPiece, activeProject).forEach(part => {
+          const unionKey = ensureUnionColumn(part.unionKind, part.diameter);
+          quantities.set(unionKey, (quantities.get(unionKey) || 0) + ((normalizedPiece.quantity || 0) * part.count));
+        });
       });
 
       csvContent += `${node.id};${node.nodeName};`;
@@ -1277,12 +1316,12 @@ const App: React.FC = () => {
       <Sidebar
         projects={projects} activeProjectId={activeProjectId} activeCategoryId={activeCategoryId} isSidebarOpen={isSidebarOpen} credits={credits} initialCredits={INITIAL_CREDITS}
         onToggleProject={(id) => { setActiveProjectId(id === activeProjectId ? null : id); setActiveCategoryId(null); }}
-        onSelectCategory={setActiveCategoryId} onOpenNewProject={handleOpenNewProject} onOpenEditProject={handleOpenEditProject}
+        onSelectCategory={(categoryId) => { setActiveCategoryId(categoryId); setShowProjectReviewModal(false); }} onOpenNewProject={handleOpenNewProject} onOpenEditProject={handleOpenEditProject}
         onDeleteProject={(pid, e) => { e.stopPropagation(); const p = projects.find(x => x.id === pid); if (p) setDeleteConfirm({ show: true, type: 'project', projectId: pid, name: p.name }); }}
         onExportProject={handleExportProject}
         onOpenLibrary={() => setShowLibraryModal(true)} onAddCategory={handleAddCategory} onEditCategory={handleEditCategory} onRemoveCategory={handleRemoveCategory}
         onImportProject={handleImportProject} onMoveCategory={handleMoveCategory} onOpenCatalog={() => setShowCatalogModal(true)}
-        onOpenProjectReview={(projectId) => { setActiveProjectId(projectId); setShowProjectReviewModal(true); }}
+        onOpenProjectReview={(projectId) => { setActiveProjectId(projectId); setActiveCategoryId(null); setShowProjectReviewModal(true); }}
       />
 
       <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className={`fixed top-1/2 -translate-y-1/2 z-40 w-8 h-20 bg-white border border-slate-200 rounded-r-2xl shadow-xl flex items-center justify-center text-[#004071] transition-all duration-300 hover:bg-[#004071] hover:text-white ${isSidebarOpen ? 'left-[320px]' : 'left-0'}`}>
@@ -1297,7 +1336,7 @@ const App: React.FC = () => {
                 <div className="flex items-center gap-4">
                   <h2 className="text-xl font-black text-[#004071] uppercase tracking-tighter leading-none">{activeProject.name}</h2>
                   <button onClick={() => handleOpenEditProject(activeProject.id)} className="text-[#88C13E] hover:text-[#004071] transition-colors"><i className="fa-solid fa-pen-to-square text-sm"></i></button>
-                  <button onClick={() => setShowProjectReviewModal(true)} className="text-[#004071] hover:text-[#88C13E] transition-colors" title="Revisar tabla general del proyecto"><i className="fa-solid fa-table-list text-sm"></i></button>
+                  <button onClick={() => { setActiveCategoryId(null); setShowProjectReviewModal(true); }} className="text-[#004071] hover:text-[#88C13E] transition-colors" title="Revisar tabla general del proyecto"><i className="fa-solid fa-table-list text-sm"></i></button>
                   <span className="text-[10px] font-black text-white uppercase tracking-widest bg-[#004071] px-2 py-1 rounded-md">{activeProject.code}</span>
                   {isAutoSaving && (
                     <span className="text-[8px] font-black text-[#88C13E] uppercase tracking-widest bg-[#88C13E]/10 px-2 py-1 rounded animate-pulse">
@@ -1339,7 +1378,9 @@ const App: React.FC = () => {
 
             <div className="flex-grow overflow-y-auto p-10">
               <div className="max-w-[1400px] mx-auto space-y-10">
-                {!activeCategoryId ? (
+                {showProjectReviewModal ? (
+                  <ProjectReviewModal project={activeProject} />
+                ) : !activeCategoryId ? (
                   <div className="h-[60vh] flex flex-col items-center justify-center text-center opacity-40">
                     <i className="fa-solid fa-tags text-6xl mb-6 text-[#004071]"></i>
                     <h3 className="text-xl font-black uppercase text-[#004071]">Selecciona un Capítulo</h3>
@@ -1727,12 +1768,6 @@ const App: React.FC = () => {
           />
         )}
 
-        {showProjectReviewModal && activeProject && (
-          <ProjectReviewModal
-            project={activeProject}
-            onClose={() => setShowProjectReviewModal(false)}
-          />
-        )}
       </main>
 
       <CatalogModal
