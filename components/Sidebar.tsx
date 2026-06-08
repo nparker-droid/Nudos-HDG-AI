@@ -40,6 +40,7 @@ interface SidebarProps {
   onMoveCategory: (projectId: string, categoryId: string, direction: 'up' | 'down') => void;
   onOpenCatalog: () => void;
   onOpenProjectReview: (projectId: string) => void;
+  onOpenHelp: () => void;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({
@@ -62,7 +63,8 @@ const Sidebar: React.FC<SidebarProps> = ({
   onImportProject,
   onMoveCategory,
   onOpenCatalog,
-  onOpenProjectReview
+  onOpenProjectReview,
+  onOpenHelp
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -82,6 +84,13 @@ const Sidebar: React.FC<SidebarProps> = ({
           <h2 className="text-[11px] font-black tracking-tighter uppercase text-[#004071]">GESTOR DE NUDOS</h2>
           <p className="text-[7px] font-bold text-slate-400 tracking-widest uppercase mt-0.5">Nudos y Piezas Especiales</p>
         </div>
+        <button
+          onClick={onOpenHelp}
+          className="ml-auto w-9 h-9 rounded-xl border border-slate-200 text-[#004071] hover:bg-[#004071] hover:text-white transition-all"
+          title="Ayuda del programa"
+        >
+          <i className="fa-solid fa-circle-info text-xs"></i>
+        </button>
       </div>
 
       <div className="p-4 space-y-2 whitespace-nowrap">

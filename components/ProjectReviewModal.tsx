@@ -70,6 +70,13 @@ const getUnionBreakdown = (piece: Piece, project: Project) => {
   return Array.from(byDiameter.entries()).map(([diameter, count]) => ({ unionKind, diameter, count }));
 };
 
+const formatUnionDiameterForKind = (unionKind: string, diameter: string) => {
+  if (normalizeText(unionKind).includes('BRIDA') && /^\d+(?:[,.]\d+)?$/.test(diameter)) {
+    return `${diameter}"`;
+  }
+  return diameter;
+};
+
 type ReviewNode = HydraulicNode & { categoryName: string; documentName: string };
 type SummaryColumn = {
   key: string;
@@ -126,9 +133,10 @@ const buildMatrix = (project: Project, sourceNodes: ReviewNode[]) => {
   };
 
   const ensureUnionColumn = (unionKind: string, diameter: string) => {
-    const key = `UNION|${unionKind}|${diameter}`;
+    const displayDiameter = formatUnionDiameterForKind(unionKind, diameter);
+    const key = `UNION|${unionKind}|${displayDiameter}`;
     if (!unionColumns.has(key)) {
-      unionColumns.set(key, { key, category: 'UNIONES', name: `UNION ${unionKind}`, diameter, mechanismGroup: 'NO APLICA', weight: 0, isUnion: true });
+      unionColumns.set(key, { key, category: 'UNIONES', name: `UNION ${unionKind}`, diameter: displayDiameter, mechanismGroup: 'NO APLICA', weight: 0, isUnion: true });
     }
     return key;
   };
@@ -173,7 +181,7 @@ const buildMatrix = (project: Project, sourceNodes: ReviewNode[]) => {
       const pieceKey = `PIEZA|${material}|${mechanismGroup}|${name}|${piece.diameter || ''}`;
       if (!column.isUnion && pieceKey === column.key) qty += piece.quantity || 0;
       getUnionBreakdown(piece, project).forEach(part => {
-        const unionKey = `UNION|${part.unionKind}|${part.diameter}`;
+        const unionKey = `UNION|${part.unionKind}|${formatUnionDiameterForKind(part.unionKind, part.diameter)}`;
         if (column.isUnion && unionKey === column.key) qty += (piece.quantity || 0) * part.count;
       });
     });
@@ -188,6 +196,26 @@ const materialBlockClass = (columns: SummaryColumn[], index: number, col: Summar
   const unionTone = col.category === 'UNIONES' ? 'bg-blue-50/80' : '';
   return `${startsBlock ? 'border-l-4 border-l-[#004071]' : 'border-l border-l-slate-100'} ${unionTone}`;
 };
+
+type HeaderGroup = { label: string; start: number; span: number; tone: string };
+
+const buildHeaderGroups = (columns: SummaryColumn[], keyFn: (column: SummaryColumn) => string): HeaderGroup[] => {
+  const groups: HeaderGroup[] = [];
+  columns.forEach((column, index) => {
+    const label = keyFn(column);
+    const tone = column.category === 'UNIONES' ? 'bg-blue-50/90 text-blue-800' : '';
+    const last = groups[groups.length - 1];
+    if (last && last.label === label && last.tone === tone) {
+      last.span += 1;
+    } else {
+      groups.push({ label, start: index, span: 1, tone });
+    }
+  });
+  return groups;
+};
+
+const headerGroupClass = (group: HeaderGroup) =>
+  `px-3 py-3 text-center border-l-4 border-l-[#004071] border-b border-slate-200 ${group.tone}`;
 
 const ProjectReviewModal: React.FC<ProjectReviewModalProps> = ({ project }) => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -232,46 +260,33 @@ const ProjectReviewModal: React.FC<ProjectReviewModalProps> = ({ project }) => {
         </div>
         <div className="overflow-auto max-h-[70vh]">
           <table className="min-w-[1400px] w-max text-left border-collapse text-xs">
-            <thead className="sticky top-0 z-10 bg-white shadow-sm">
+            <thead className="bg-white shadow-sm">
               <tr className="bg-[#004071] text-white uppercase text-[9px] tracking-widest">
-                <th className="sticky left-0 z-30 bg-[#004071] px-4 py-3 w-[140px] min-w-[140px] max-w-[140px]">ID Nudo</th>
-                <th className="sticky left-[140px] z-30 bg-[#004071] px-4 py-3 w-[260px] min-w-[260px] max-w-[260px] shadow-[8px_0_12px_-10px_rgba(15,23,42,0.8)]">Nombre Nudo</th>
-                <th className="px-3 py-3 min-w-[130px]">Capitulo</th>
-                <th className="px-3 py-3 min-w-[130px]">Documento</th>
-                {matrix.columns.map((col, colIndex) => <th key={`cat-${title}-${col.key}`} className={`px-3 py-3 min-w-[105px] text-center ${materialBlockClass(matrix.columns, colIndex, col)}`}>{col.category}</th>)}
-                <th className="px-3 py-3 min-w-[90px] text-center">TOTAL</th>
-                <th className="px-3 py-3 min-w-[90px] text-center">ANCLAJE</th>
-                <th className="px-3 py-3 min-w-[150px]">ALERTAS</th>
+                <th rowSpan={4} className="px-4 py-3 w-[140px] min-w-[140px] max-w-[140px] border-r border-white/10">ID Nudo</th>
+                <th rowSpan={4} className="px-4 py-3 w-[260px] min-w-[260px] max-w-[260px] border-r border-white/10">Nombre Nudo</th>
+                <th rowSpan={4} className="px-3 py-3 min-w-[130px] border-r border-white/10">Capitulo</th>
+                <th rowSpan={4} className="px-3 py-3 min-w-[130px] border-r border-white/10">Documento</th>
+                {buildHeaderGroups(matrix.columns, col => col.category).map(group => (
+                  <th key={`mat-${title}-${group.label}-${group.start}`} colSpan={group.span} className={headerGroupClass(group)}>{group.label}</th>
+                ))}
+                <th rowSpan={4} className="px-3 py-3 min-w-[90px] text-center border-l-4 border-l-[#004071]">TOTAL</th>
+                <th rowSpan={4} className="px-3 py-3 min-w-[90px] text-center">ANCLAJE</th>
+                <th rowSpan={4} className="px-3 py-3 min-w-[150px]">ALERTAS</th>
               </tr>
               <tr className="bg-slate-50 text-[#004071] uppercase text-[9px] font-black">
-                <th className="sticky left-0 z-30 bg-slate-50 px-4 py-2 w-[140px] min-w-[140px] max-w-[140px]"></th>
-                <th className="sticky left-[140px] z-30 bg-slate-50 px-4 py-2 w-[260px] min-w-[260px] max-w-[260px] shadow-[8px_0_12px_-10px_rgba(15,23,42,0.35)]"></th>
-                <th></th>
-                <th></th>
-                {matrix.columns.map((col, colIndex) => <th key={`name-${title}-${col.key}`} className={`px-3 py-2 text-center ${materialBlockClass(matrix.columns, colIndex, col)}`}>{col.name}</th>)}
-                <th></th>
-                <th></th>
-                <th></th>
+                {buildHeaderGroups(matrix.columns, col => col.mechanismGroup).map(group => (
+                  <th key={`mec-${title}-${group.label}-${group.start}`} colSpan={group.span} className={headerGroupClass(group)}>{group.label}</th>
+                ))}
               </tr>
-              <tr className="bg-slate-100 text-slate-500 uppercase text-[9px] font-black">
-                <th className="sticky left-0 z-30 bg-slate-100 px-4 py-2 w-[140px] min-w-[140px] max-w-[140px]"></th>
-                <th className="sticky left-[140px] z-30 bg-slate-100 px-4 py-2 w-[260px] min-w-[260px] max-w-[260px] shadow-[8px_0_12px_-10px_rgba(15,23,42,0.35)]"></th>
-                <th></th>
-                <th></th>
-                {matrix.columns.map((col, colIndex) => <th key={`diam-${title}-${col.key}`} className={`px-3 py-2 text-center ${materialBlockClass(matrix.columns, colIndex, col)}`}>{col.diameter}</th>)}
-                <th></th>
-                <th></th>
-                <th></th>
+              <tr className="bg-slate-100 text-slate-600 uppercase text-[9px] font-black">
+                {buildHeaderGroups(matrix.columns, col => col.name).map(group => (
+                  <th key={`piece-${title}-${group.label}-${group.start}`} colSpan={group.span} className={headerGroupClass(group)}>{group.label}</th>
+                ))}
               </tr>
-              <tr className="bg-white text-slate-400 uppercase text-[9px] font-black border-b">
-                <th className="sticky left-0 z-30 bg-white px-4 py-2 w-[140px] min-w-[140px] max-w-[140px]"></th>
-                <th className="sticky left-[140px] z-30 bg-white px-4 py-2 w-[260px] min-w-[260px] max-w-[260px] shadow-[8px_0_12px_-10px_rgba(15,23,42,0.35)]"></th>
-                <th></th>
-                <th></th>
-                {matrix.columns.map((col, colIndex) => <th key={`mec-${title}-${col.key}`} className={`px-3 py-2 text-center ${materialBlockClass(matrix.columns, colIndex, col)}`}>{col.mechanismGroup}</th>)}
-                <th></th>
-                <th></th>
-                <th></th>
+              <tr className="bg-white text-slate-500 uppercase text-[9px] font-black border-b">
+                {matrix.columns.map((col, colIndex) => (
+                  <th key={`diam-${title}-${col.key}`} className={`px-3 py-2 text-center min-w-[105px] ${materialBlockClass(matrix.columns, colIndex, col)}`}>{col.diameter}</th>
+                ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -285,16 +300,16 @@ const ProjectReviewModal: React.FC<ProjectReviewModalProps> = ({ project }) => {
                 let rowTotal = 0;
                 return (
                   <tr key={`${title}-${node.id}-${index}`} className={duplicate || incomplete ? 'bg-amber-50/60' : 'hover:bg-slate-50'}>
-                    <td className="sticky left-0 z-20 bg-inherit px-4 py-3 font-black text-[#88C13E] w-[140px] min-w-[140px] max-w-[140px] truncate" title={node.id}>{node.id}</td>
-                    <td className="sticky left-[140px] z-20 bg-inherit px-4 py-3 font-bold text-[#004071] w-[260px] min-w-[260px] max-w-[260px] truncate shadow-[8px_0_12px_-10px_rgba(15,23,42,0.35)]" title={node.nodeName}>{node.nodeName}</td>
-                    <td className="px-3 py-3">{node.categoryName}</td>
-                    <td className="px-3 py-3">{node.documentName}</td>
+                    <td className="px-4 py-3 font-black text-[#88C13E] w-[140px] min-w-[140px] max-w-[140px] truncate bg-inherit" title={node.id}>{node.id}</td>
+                    <td className="px-4 py-3 font-bold text-[#004071] w-[260px] min-w-[260px] max-w-[260px] truncate bg-inherit" title={node.nodeName}>{node.nodeName}</td>
+                    <td className="px-3 py-3 truncate max-w-[160px]" title={node.categoryName}>{node.categoryName}</td>
+                    <td className="px-3 py-3 truncate max-w-[160px]" title={node.documentName}>{node.documentName}</td>
                     {matrix.columns.map((col, colIndex) => {
                       const qty = matrix.quantityFor(node, col);
                       if (!col.isUnion) rowTotal += qty;
                       return <td key={`${title}-${node.id}-${col.key}`} className={`px-3 py-3 text-center font-black ${materialBlockClass(matrix.columns, colIndex, col)} ${col.isUnion ? 'text-blue-700' : 'text-slate-700'}`}>{qty || ''}</td>;
                     })}
-                    <td className="px-3 py-3 text-center font-black text-[#004071]">{rowTotal || ''}</td>
+                    <td className="px-3 py-3 text-center font-black text-[#004071] border-l-4 border-l-[#004071]">{rowTotal || ''}</td>
                     <td className="px-3 py-3 text-center font-black text-slate-600">{node.anchorageCount || ''}</td>
                     <td className="px-3 py-3 text-amber-700 font-bold">{[duplicate ? 'ID duplicado' : '', incomplete ? 'Revisar piezas' : ''].filter(Boolean).join(', ')}</td>
                   </tr>
@@ -302,12 +317,12 @@ const ProjectReviewModal: React.FC<ProjectReviewModalProps> = ({ project }) => {
               })}
               {nodes.length > 0 && (
                 <tr className="bg-[#004071] text-white font-black uppercase">
-                  <td className="sticky left-0 bg-[#004071] px-4 py-3 w-[140px] min-w-[140px] max-w-[140px]">Cantidad Total</td>
-                  <td className="sticky left-[140px] bg-[#004071] px-4 py-3 w-[260px] min-w-[260px] max-w-[260px] shadow-[8px_0_12px_-10px_rgba(15,23,42,0.8)]"></td>
+                  <td className="px-4 py-3">Cantidad Total</td>
+                  <td className="px-4 py-3"></td>
                   <td></td>
                   <td></td>
                   {matrix.columns.map((col, colIndex) => <td key={`total-${title}-${col.key}`} className={`px-3 py-3 text-center ${materialBlockClass(matrix.columns, colIndex, col)}`}>{matrix.totals.get(col.key) || ''}</td>)}
-                  <td className="px-3 py-3 text-center">{matrix.grandTotalPieces}</td>
+                  <td className="px-3 py-3 text-center border-l-4 border-l-white/50">{matrix.grandTotalPieces}</td>
                   <td className="px-3 py-3 text-center">{matrix.totalAnchorages}</td>
                   <td></td>
                 </tr>

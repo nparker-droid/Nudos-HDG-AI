@@ -157,6 +157,13 @@ const getUnionBreakdownForPiece = (piece: Piece, project?: Project) => {
   return Array.from(byDiameter.entries()).map(([diameter, count]) => ({ unionKind, diameter, count }));
 };
 
+const formatUnionDiameterForKind = (unionKind: string, diameter: string) => {
+  if (normalizeText(unionKind).includes('BRIDA') && /^\d+(?:[,.]\d+)?$/.test(diameter)) {
+    return `${diameter}"`;
+  }
+  return diameter;
+};
+
 const withPieceDefaults = (piece: Piece): Piece => ({
   ...piece,
   hasMechanism: piece.hasMechanism ?? inferHasMechanism(piece),
@@ -637,8 +644,9 @@ const App: React.FC = () => {
           }
 
           getUnionBreakdownForPiece(normalizedPiece, activeProject).forEach(unionPart => {
-            const unionName = `UNION ${unionPart.unionKind} ${unionPart.diameter}`.trim();
-            const unionKey = `${unionName}-${unionPart.diameter}`.toUpperCase();
+            const displayDiameter = formatUnionDiameterForKind(unionPart.unionKind, unionPart.diameter);
+            const unionName = `UNION ${unionPart.unionKind} ${displayDiameter}`.trim();
+            const unionKey = `${unionName}-${displayDiameter}`.toUpperCase();
             const existingUnion = mGroup.pieceMap.get(unionKey);
             const unionQty = qty * unionPart.count;
             if (existingUnion) {
@@ -730,14 +738,15 @@ const App: React.FC = () => {
     };
 
     const ensureUnionColumn = (unionKind: string, diameter: string) => {
-      const key = `UNION|${unionKind}|${diameter}`;
+      const displayDiameter = formatUnionDiameterForKind(unionKind, diameter);
+      const key = `UNION|${unionKind}|${displayDiameter}`;
       if (!unionColumns.has(key)) {
         unionColumns.set(key, {
           key,
           category: 'UNIONES',
           material: 'UNIONES',
           name: `UNION ${unionKind}`,
-          diameter,
+          diameter: displayDiameter,
           mechanismGroup: 'NO APLICA',
           weight: 0,
           isUnion: true
@@ -1326,6 +1335,7 @@ const App: React.FC = () => {
         onOpenLibrary={() => setShowLibraryModal(true)} onAddCategory={handleAddCategory} onEditCategory={handleEditCategory} onRemoveCategory={handleRemoveCategory}
         onImportProject={handleImportProject} onMoveCategory={handleMoveCategory} onOpenCatalog={() => setShowCatalogModal(true)}
         onOpenProjectReview={(projectId) => { setActiveProjectId(projectId); setActiveCategoryId(null); setShowProjectReviewModal(true); }}
+        onOpenHelp={() => setShowHelpModal(true)}
       />
 
       <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className={`fixed top-1/2 -translate-y-1/2 z-40 w-8 h-20 bg-white border border-slate-200 rounded-r-2xl shadow-xl flex items-center justify-center text-[#004071] transition-all duration-300 hover:bg-[#004071] hover:text-white ${isSidebarOpen ? 'left-[320px]' : 'left-0'}`}>
