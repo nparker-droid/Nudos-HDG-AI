@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import * as XLSX from 'xlsx';
 import { HydraulicNode, Piece, Project } from '../types.ts';
 
 interface ProjectReviewModalProps {
@@ -197,25 +198,29 @@ const materialBlockClass = (columns: SummaryColumn[], index: number, col: Summar
   return `${startsBlock ? 'border-l-4 border-l-[#004071]' : 'border-l border-l-slate-100'} ${unionTone}`;
 };
 
-type HeaderGroup = { label: string; start: number; span: number; tone: string };
+type HeaderGroup = { label: string; groupKey: string; start: number; span: number };
 
-const buildHeaderGroups = (columns: SummaryColumn[], keyFn: (column: SummaryColumn) => string): HeaderGroup[] => {
+const buildHeaderGroups = (
+  columns: SummaryColumn[],
+  labelFn: (column: SummaryColumn) => string,
+  groupKeyFn: (column: SummaryColumn) => string = labelFn
+): HeaderGroup[] => {
   const groups: HeaderGroup[] = [];
   columns.forEach((column, index) => {
-    const label = keyFn(column);
-    const tone = column.category === 'UNIONES' ? 'bg-blue-50/90 text-blue-800' : '';
+    const label = labelFn(column);
+    const groupKey = groupKeyFn(column);
     const last = groups[groups.length - 1];
-    if (last && last.label === label && last.tone === tone) {
+    if (last && last.groupKey === groupKey) {
       last.span += 1;
     } else {
-      groups.push({ label, start: index, span: 1, tone });
+      groups.push({ label, groupKey, start: index, span: 1 });
     }
   });
   return groups;
 };
 
 const headerGroupClass = (group: HeaderGroup) =>
-  `px-3 py-3 text-center border-l-4 border-l-[#004071] border-b border-slate-200 ${group.tone}`;
+  `px-3 py-3 text-center border-l-4 border-l-white/40 border-b border-white/20 bg-[#004071] text-white`;
 
 const ProjectReviewModal: React.FC<ProjectReviewModalProps> = ({ project }) => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -248,6 +253,113 @@ const ProjectReviewModal: React.FC<ProjectReviewModalProps> = ({ project }) => {
   const numericNodes = filterAndSort(allNodes.filter(isNumericNode));
   const cameraNodes = filterAndSort(allNodes.filter(node => !isNumericNode(node)));
 
+  const exportWorkbook = () => {
+    const workbook = XLSX.utils.book_new();
+    const usedSheetNames = new Set<string>();
+    const sanitizeSheetName = (name: string) => {
+      const clean = name.replace(/[\\/?*\[\]:]/g, ' ').trim() || 'Hoja';
+      let base = clean.slice(0, 31);
+      let candidate = base;
+      let counter = 1;
+      while (usedSheetNames.has(candidate)) {
+        const suffix = ` ${counter}`;
+        candidate = `${base.slice(0, 31 - suffix.length)}${suffix}`;
+        counter += 1;
+      }
+      usedSheetNames.add(candidate);
+      return candidate;
+    };
+
+    const appendMatrixSheet = (sheetName: string, nodes: ReviewNode[]) => {
+      const matrix = buildMatrix(project, nodes);
+      const rows: Array<Array<string | number>> = [];
+      const merges: XLSX.Range[] = [];
+      const baseHeaders = ['ID Nudo', 'Nombre Nudo', 'Capitulo', 'Documento'];
+
+      rows.push([...baseHeaders, ...Array(matrix.columns.length).fill(''), 'TOTAL', 'ANCLAJE', 'ALERTAS']);
+      rows.push([...Array(4).fill(''), ...Array(matrix.columns.length).fill(''), '', '', '']);
+      rows.push([...Array(4).fill(''), ...Array(matrix.columns.length).fill(''), '', '', '']);
+      rows.push([...Array(4).fill(''), ...matrix.columns.map(col => col.diameter), '', '', '']);
+
+      baseHeaders.forEach((_, colIndex) => merges.push({ s: { r: 0, c: colIndex }, e: { r: 3, c: colIndex } }));
+      const tailStart = 4 + matrix.columns.length;
+      [tailStart, tailStart + 1, tailStart + 2].forEach(colIndex => merges.push({ s: { r: 0, c: colIndex }, e: { r: 3, c: colIndex } }));
+
+      const addHeaderGroups = (rowIndex: number, groups: HeaderGroup[]) => {
+        groups.forEach(group => {
+          const col = 4 + group.start;
+          rows[rowIndex][col] = group.label;
+          if (group.span > 1) merges.push({ s: { r: rowIndex, c: col }, e: { r: rowIndex, c: col + group.span - 1 } });
+        });
+      };
+
+      addHeaderGroups(0, buildHeaderGroups(matrix.columns, col => col.category));
+      addHeaderGroups(1, buildHeaderGroups(matrix.columns, col => col.mechanismGroup, col => `${col.category}|${col.mechanismGroup}`));
+      addHeaderGroups(2, buildHeaderGroups(matrix.columns, col => col.name, col => `${col.category}|${col.mechanismGroup}|${col.name}`));
+
+      nodes.forEach(node => {
+        const duplicate = matrix.duplicateKeys.has(`${node.type || 'Otro'}:${normalizeText(node.id)}`);
+        const incomplete = node.pieces.some(piece => !piece.name || !piece.material || !piece.diameter || piece.quantity <= 0);
+        let rowTotal = 0;
+        const quantities = matrix.columns.map(col => {
+          const qty = matrix.quantityFor(node, col);
+          if (!col.isUnion) rowTotal += qty;
+          return qty || '';
+        });
+        rows.push([
+          node.id,
+          node.nodeName,
+          node.categoryName,
+          node.documentName,
+          ...quantities,
+          rowTotal || '',
+          node.anchorageCount || '',
+          [duplicate ? 'ID duplicado' : '', incomplete ? 'Revisar piezas' : ''].filter(Boolean).join(', ')
+        ]);
+      });
+
+      if (nodes.length > 0) {
+        rows.push([
+          'CANTIDAD TOTAL',
+          '',
+          '',
+          '',
+          ...matrix.columns.map(col => matrix.totals.get(col.key) || ''),
+          matrix.grandTotalPieces,
+          matrix.totalAnchorages,
+          ''
+        ]);
+      }
+
+      const worksheet = XLSX.utils.aoa_to_sheet(rows);
+      worksheet['!merges'] = merges;
+      worksheet['!cols'] = [
+        { wch: 16 },
+        { wch: 32 },
+        { wch: 20 },
+        { wch: 20 },
+        ...matrix.columns.map(() => ({ wch: 16 })),
+        { wch: 12 },
+        { wch: 12 },
+        { wch: 24 }
+      ];
+      XLSX.utils.book_append_sheet(workbook, worksheet, sanitizeSheetName(sheetName));
+    };
+
+    const allNumericNodes = allNodes.filter(isNumericNode).sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
+    const allCameraNodes = allNodes.filter(node => !isNumericNode(node)).sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
+    appendMatrixSheet('Nudos Global', allNumericNodes);
+    Array.from(new Set(allNumericNodes.map(node => node.documentName))).forEach(documentName => {
+      appendMatrixSheet(`Nudos ${documentName}`, allNumericNodes.filter(node => node.documentName === documentName));
+    });
+    appendMatrixSheet('Camaras Global', allCameraNodes);
+    Array.from(new Set(allCameraNodes.map(node => node.documentName))).forEach(documentName => {
+      appendMatrixSheet(`Camaras ${documentName}`, allCameraNodes.filter(node => node.documentName === documentName));
+    });
+
+    XLSX.writeFile(workbook, `Resumen_General_${project.name.replace(/\s+/g, '_')}.xlsx`);
+  };
+
   const renderTable = (title: string, nodes: ReviewNode[]) => {
     const matrix = buildMatrix(project, nodes);
     return (
@@ -273,19 +385,19 @@ const ProjectReviewModal: React.FC<ProjectReviewModalProps> = ({ project }) => {
                 <th rowSpan={4} className="px-3 py-3 min-w-[90px] text-center">ANCLAJE</th>
                 <th rowSpan={4} className="px-3 py-3 min-w-[150px]">ALERTAS</th>
               </tr>
-              <tr className="bg-slate-50 text-[#004071] uppercase text-[9px] font-black">
-                {buildHeaderGroups(matrix.columns, col => col.mechanismGroup).map(group => (
+              <tr className="bg-[#004071] text-white uppercase text-[9px] font-black">
+                {buildHeaderGroups(matrix.columns, col => col.mechanismGroup, col => `${col.category}|${col.mechanismGroup}`).map(group => (
                   <th key={`mec-${title}-${group.label}-${group.start}`} colSpan={group.span} className={headerGroupClass(group)}>{group.label}</th>
                 ))}
               </tr>
-              <tr className="bg-slate-100 text-slate-600 uppercase text-[9px] font-black">
-                {buildHeaderGroups(matrix.columns, col => col.name).map(group => (
+              <tr className="bg-[#004071] text-white uppercase text-[9px] font-black">
+                {buildHeaderGroups(matrix.columns, col => col.name, col => `${col.category}|${col.mechanismGroup}|${col.name}`).map(group => (
                   <th key={`piece-${title}-${group.label}-${group.start}`} colSpan={group.span} className={headerGroupClass(group)}>{group.label}</th>
                 ))}
               </tr>
-              <tr className="bg-white text-slate-500 uppercase text-[9px] font-black border-b">
+              <tr className="bg-[#004071] text-white uppercase text-[9px] font-black border-b">
                 {matrix.columns.map((col, colIndex) => (
-                  <th key={`diam-${title}-${col.key}`} className={`px-3 py-2 text-center min-w-[105px] ${materialBlockClass(matrix.columns, colIndex, col)}`}>{col.diameter}</th>
+                  <th key={`diam-${title}-${col.key}`} className={`px-3 py-2 text-center min-w-[105px] border-l border-l-white/20 bg-[#004071] text-white`}>{col.diameter}</th>
                 ))}
               </tr>
             </thead>
@@ -362,6 +474,9 @@ const ProjectReviewModal: React.FC<ProjectReviewModalProps> = ({ project }) => {
             <input type="checkbox" checked={onlyAlerts} onChange={e => setOnlyAlerts(e.target.checked)} />
             Solo alertas
           </label>
+          <button onClick={exportWorkbook} className="px-5 py-3 bg-[#88C13E] text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-[#76a936] transition-colors flex items-center gap-2">
+            <i className="fa-solid fa-file-excel"></i> Exportar Excel
+          </button>
         </div>
       </div>
       {renderTable('Tabla de Nudos', numericNodes)}
