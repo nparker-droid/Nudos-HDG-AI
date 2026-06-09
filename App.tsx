@@ -609,9 +609,7 @@ const App: React.FC = () => {
           }
 
           const mGroup = materialData.get(materialKey)!;
-          const unionKind = normalizedPiece.union || getUnionKindForPiece(normalizedPiece, activeProject);
-          const unionCount = getPieceUnionCount(normalizedPiece);
-          const key = `${normalizedName}-${normalizedPiece.diameter}-${unionKind}-${unionCount}`.toUpperCase();
+          const key = `${normalizedName}-${normalizedPiece.diameter}`.toUpperCase();
           const existing = mGroup.pieceMap.get(key);
 
           const qty = normalizedPiece.quantity * multiplier;
@@ -634,7 +632,7 @@ const App: React.FC = () => {
             if (priceKey) suggestedPrice = SUGGESTED_PRICES[priceKey];
 
             mGroup.pieceMap.set(key, {
-              name: `${normalizedName} ${normalizedPiece.diameter} U:${unionCount} ${unionKind}`.trim(),
+              name: `${normalizedName} ${normalizedPiece.diameter}`.trim(),
               unit: unit,
               quantity: qty,
               price: suggestedPrice,

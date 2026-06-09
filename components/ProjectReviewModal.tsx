@@ -341,9 +341,7 @@ const ProjectReviewModal: React.FC<ProjectReviewModalProps> = ({ project }) => {
             }
 
             const group = materialData.get(materialKey)!;
-            const unionKind = piece.union || getUnionKind(piece, project);
-            const unionCount = typeof piece.unionCount === 'number' ? piece.unionCount : (shouldAutoAddUnions(piece) ? 2 : 0);
-            const key = `${normalizedName}-${piece.diameter || 'S/D'}-${unionKind}-${unionCount}`.toUpperCase();
+            const key = `${normalizedName}-${piece.diameter || 'S/D'}`.toUpperCase();
             const existing = group.pieceMap.get(key);
             const quantity = (piece.quantity || 0) * multiplier;
             const unitWeight = piece.weight || 0;
@@ -361,7 +359,7 @@ const ProjectReviewModal: React.FC<ProjectReviewModalProps> = ({ project }) => {
 
               const priceKey = Object.keys(SUGGESTED_PRICES).find(priceName => normalizeText(normalizedName).includes(normalizeText(priceName)));
               group.pieceMap.set(key, {
-                name: `${normalizedName} ${piece.diameter || 'S/D'} U:${unionCount} ${unionKind}`.trim(),
+                name: `${normalizedName} ${piece.diameter || 'S/D'}`.trim(),
                 unit,
                 quantity,
                 price: priceKey ? SUGGESTED_PRICES[priceKey] : 0,
