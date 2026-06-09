@@ -354,11 +354,10 @@ const App: React.FC = () => {
 
     const missing: { type: string, number: number }[] = [];
     Object.entries(idsByType).forEach(([type, set]) => {
-      if (set.size < 2) return;
+      if (set.size === 0) return;
       const sorted = Array.from(set).sort((a, b) => a - b);
-      const min = sorted[0];
       const max = sorted[sorted.length - 1];
-      for (let i = min; i <= max; i++) {
+      for (let i = 1; i <= max; i++) {
         if (!set.has(i)) {
           missing.push({ type, number: i });
         }
@@ -1416,16 +1415,6 @@ const App: React.FC = () => {
                   <button onClick={() => setShowSaveModal(true)} className="px-6 py-3 bg-[#004071] text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg flex items-center gap-2 hover:bg-[#002D50] transition-all">
                     <i className="fa-solid fa-cloud-arrow-up text-xs"></i> Guardar
                   </button>
-                  {activeCategory && (
-                    <div className="flex items-center gap-2">
-                      <button onClick={handleExportSummaryTable} className="px-4 py-3 bg-[#88C13E] text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-sm flex items-center gap-2 hover:bg-[#a6bf2e]">
-                        <i className="fa-solid fa-table-list text-xs"></i> Tabla
-                      </button>
-                      <button onClick={handleExportAPU} className="px-4 py-3 bg-[#88C13E] text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-md flex items-center gap-2 hover:bg-[#a6bf2e]">
-                        <i className="fa-solid fa-file-invoice-dollar text-xs"></i> APU
-                      </button>
-                    </div>
-                  )}
                   <button
                     onClick={handlePasteNode}
                     disabled={!copiedNode || !activeCategoryId}
@@ -1608,7 +1597,6 @@ const App: React.FC = () => {
                           credits={credits}
                           onCopyNode={handleCopyNode}
                           activeProject={activeProject}
-                          onExportTable={handleExportAnalysisTable}
                           catalogItems={catalogItems}
                         />
                       );

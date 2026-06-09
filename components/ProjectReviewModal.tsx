@@ -81,6 +81,26 @@ const formatUnionDiameterForKind = (unionKind: string, diameter: string) => {
 const formatWeight = (value: number) =>
   value ? value.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '';
 
+const SUGGESTED_PRICES: Record<string, number> = {
+  'VALVULA': 450000,
+  'VÁLVULA': 450000,
+  'CODO': 45000,
+  'TEE': 65000,
+  'REDUCCION': 35000,
+  'REDUCCIÓN': 35000,
+  'TUBO': 12000,
+  'UNION': 25000,
+  'UNIÓN': 25000,
+  'COPLA': 22000,
+  'STUB END': 28000,
+  'FLANGE': 42000,
+  'JUNTA': 55000,
+  'PERNOS': 1500,
+  'HORMIGON': 145000,
+  'HORMIGÓN': 145000,
+  'ANCLAJE': 180000
+};
+
 type ReviewNode = HydraulicNode & { categoryName: string; documentName: string };
 type SummaryColumn = {
   key: string;
@@ -258,6 +278,206 @@ const ProjectReviewModal: React.FC<ProjectReviewModalProps> = ({ project }) => {
 
   const numericNodes = filterAndSort(allNodes.filter(isNumericNode));
   const cameraNodes = filterAndSort(allNodes.filter(node => !isNumericNode(node)));
+
+  const exportApuWorkbook = () => {
+    const workbook = XLSX.utils.book_new();
+    const usedSheetNames = new Set<string>();
+    const sanitizeSheetName = (name: string) => {
+      const clean = name.replace(/[\\/?*\[\]:]/g, ' ').trim() || 'Capitulo';
+      let base = clean.slice(0, 31);
+      let candidate = base;
+      let counter = 1;
+      while (usedSheetNames.has(candidate)) {
+        const suffix = ` ${counter}`;
+        candidate = `${base.slice(0, 31 - suffix.length)}${suffix}`;
+        counter += 1;
+      }
+      usedSheetNames.add(candidate);
+      return candidate;
+    };
+
+    const getUnit = (pieceName: string) => {
+      const normalized = normalizeText(pieceName);
+      if (normalized.includes('TUBO') || normalized.includes('CANERIA') || normalized.includes('CAÑERIA')) return 'm';
+      if (normalized.includes('HORMIGON')) return 'm3';
+      return 'Un';
+    };
+
+    const getSuggestedPrice = (pieceName: string) => {
+      const normalized = normalizeText(pieceName);
+      const priceKey = Object.keys(SUGGESTED_PRICES).find(key => normalized.includes(normalizeText(key)));
+      return priceKey ? SUGGESTED_PRICES[priceKey] : 0;
+    };
+
+    const addApuRow = (
+      map: Map<string, {
+        category: string;
+        material: string;
+        mechanismGroup: string;
+        name: string;
+        diameter: string;
+        unit: string;
+        quantity: number;
+        unitWeight: number;
+        price: number;
+      }>,
+      item: {
+        category: string;
+        material: string;
+        mechanismGroup: string;
+        name: string;
+        diameter: string;
+        unit: string;
+        quantity: number;
+        unitWeight: number;
+        price: number;
+      }
+    ) => {
+      const key = `${item.material}|${item.mechanismGroup}|${item.name}|${item.diameter}|${item.unit}`.toUpperCase();
+      const existing = map.get(key);
+      if (existing) {
+        existing.quantity += item.quantity;
+      } else {
+        map.set(key, { ...item });
+      }
+    };
+
+    const headerStyle = {
+      font: { bold: true, color: { rgb: 'FFFFFF' } },
+      fill: { fgColor: { rgb: '004071' } },
+      alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+      border: {
+        top: { style: 'thin', color: { rgb: 'FFFFFF' } },
+        bottom: { style: 'thin', color: { rgb: 'FFFFFF' } },
+        left: { style: 'thin', color: { rgb: 'FFFFFF' } },
+        right: { style: 'thin', color: { rgb: 'FFFFFF' } }
+      }
+    };
+    const dataStyle = {
+      border: {
+        top: { style: 'thin', color: { rgb: 'D9E2EC' } },
+        bottom: { style: 'thin', color: { rgb: 'D9E2EC' } },
+        left: { style: 'thin', color: { rgb: 'D9E2EC' } },
+        right: { style: 'thin', color: { rgb: 'D9E2EC' } }
+      },
+      alignment: { vertical: 'center', wrapText: true }
+    };
+
+    project.categories.forEach(category => {
+      const apuMap = new Map<string, {
+        category: string;
+        material: string;
+        mechanismGroup: string;
+        name: string;
+        diameter: string;
+        unit: string;
+        quantity: number;
+        unitWeight: number;
+        price: number;
+      }>();
+
+      category.analyses.forEach(analysis => {
+        (analysis.result?.nodes || []).forEach(node => {
+          const multiplier = Math.max(splitNodeIds(node.id).length, 1);
+          node.pieces.forEach(piece => {
+            const name = (piece.name || '').trim().toUpperCase();
+            const material = String(piece.material || 'OTRO').toUpperCase();
+            const mechanismGroup = (piece.hasMechanism ?? inferHasMechanism(piece)) ? 'CON MECANISMO' : 'SIN MECANISMO';
+            const quantity = (piece.quantity || 0) * multiplier;
+            addApuRow(apuMap, {
+              category: 'PIEZAS',
+              material,
+              mechanismGroup,
+              name,
+              diameter: piece.diameter || 'S/D',
+              unit: getUnit(name),
+              quantity,
+              unitWeight: piece.weight || 0,
+              price: getSuggestedPrice(name)
+            });
+
+            getUnionBreakdown(piece, project).forEach(part => {
+              const displayDiameter = formatUnionDiameterForKind(part.unionKind, part.diameter);
+              const unionName = `UNION ${part.unionKind}`.toUpperCase();
+              addApuRow(apuMap, {
+                category: 'UNIONES',
+                material: 'UNIONES',
+                mechanismGroup: 'NO APLICA',
+                name: unionName,
+                diameter: displayDiameter,
+                unit: 'Un',
+                quantity: quantity * part.count,
+                unitWeight: 0,
+                price: SUGGESTED_PRICES.UNION
+              });
+            });
+          });
+        });
+      });
+
+      const rows: Array<Array<string | number>> = [[
+        'Categoria',
+        'Material',
+        'Mecanismo',
+        'Pieza',
+        'Diametro',
+        'Unidad',
+        'Cantidad',
+        'Peso unitario kg',
+        'Peso total kg',
+        'Precio referencia'
+      ]];
+
+      Array.from(apuMap.values())
+        .sort((a, b) => a.category.localeCompare(b.category) || a.material.localeCompare(b.material) || a.mechanismGroup.localeCompare(b.mechanismGroup) || a.name.localeCompare(b.name) || a.diameter.localeCompare(b.diameter, undefined, { numeric: true }))
+        .forEach(item => rows.push([
+          item.category,
+          item.material,
+          item.mechanismGroup,
+          item.name,
+          item.diameter,
+          item.unit,
+          item.quantity,
+          item.unitWeight || '',
+          item.unitWeight ? Number((item.quantity * item.unitWeight).toFixed(2)) : '',
+          item.price || ''
+        ]));
+
+      if (rows.length === 1) rows.push(['Sin piezas', '', '', '', '', '', '', '', '', '']);
+
+      const worksheet = XLSX.utils.aoa_to_sheet(rows);
+      worksheet['!cols'] = [
+        { wch: 14 },
+        { wch: 18 },
+        { wch: 18 },
+        { wch: 34 },
+        { wch: 16 },
+        { wch: 10 },
+        { wch: 12 },
+        { wch: 16 },
+        { wch: 16 },
+        { wch: 18 }
+      ];
+      worksheet['!autofilter'] = {
+        ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: Math.max(rows.length - 1, 0), c: 9 } })
+      };
+      (worksheet as any)['!freeze'] = { ySplit: 1, topLeftCell: 'A2', activePane: 'bottomLeft', state: 'frozen' };
+      for (let r = 0; r < rows.length; r += 1) {
+        for (let c = 0; c < 10; c += 1) {
+          const ref = XLSX.utils.encode_cell({ r, c });
+          if (worksheet[ref]) worksheet[ref].s = r === 0 ? headerStyle : dataStyle;
+        }
+      }
+      XLSX.utils.book_append_sheet(workbook, worksheet, sanitizeSheetName(`APU ${category.name}`));
+    });
+
+    if (project.categories.length === 0) {
+      const worksheet = XLSX.utils.aoa_to_sheet([['Sin capitulos para exportar']]);
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'APU');
+    }
+
+    XLSX.writeFile(workbook, `APU_${project.name.replace(/\s+/g, '_')}.xlsx`);
+  };
 
   const exportWorkbook = () => {
     const workbook = XLSX.utils.book_new();
@@ -590,6 +810,9 @@ const ProjectReviewModal: React.FC<ProjectReviewModalProps> = ({ project }) => {
           </label>
           <button onClick={exportWorkbook} className="px-5 py-3 bg-[#88C13E] text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-[#76a936] transition-colors flex items-center gap-2">
             <i className="fa-solid fa-file-excel"></i> Exportar Excel
+          </button>
+          <button onClick={exportApuWorkbook} className="px-5 py-3 bg-[#004071] text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-[#002D50] transition-colors flex items-center gap-2">
+            <i className="fa-solid fa-file-invoice-dollar"></i> Exportar APU
           </button>
         </div>
       </div>
