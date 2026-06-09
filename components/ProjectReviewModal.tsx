@@ -296,52 +296,6 @@ const ProjectReviewModal: React.FC<ProjectReviewModalProps> = ({ project }) => {
       return candidate;
     };
 
-    const getUnit = (pieceName: string) => {
-      const normalized = normalizeText(pieceName);
-      if (normalized.includes('TUBO') || normalized.includes('CANERIA') || normalized.includes('CAÑERIA')) return 'm';
-      if (normalized.includes('HORMIGON')) return 'm3';
-      return 'Un';
-    };
-
-    const getSuggestedPrice = (pieceName: string) => {
-      const normalized = normalizeText(pieceName);
-      const priceKey = Object.keys(SUGGESTED_PRICES).find(key => normalized.includes(normalizeText(key)));
-      return priceKey ? SUGGESTED_PRICES[priceKey] : 0;
-    };
-
-    const addApuRow = (
-      map: Map<string, {
-        category: string;
-        material: string;
-        mechanismGroup: string;
-        name: string;
-        diameter: string;
-        unit: string;
-        quantity: number;
-        unitWeight: number;
-        price: number;
-      }>,
-      item: {
-        category: string;
-        material: string;
-        mechanismGroup: string;
-        name: string;
-        diameter: string;
-        unit: string;
-        quantity: number;
-        unitWeight: number;
-        price: number;
-      }
-    ) => {
-      const key = `${item.material}|${item.mechanismGroup}|${item.name}|${item.diameter}|${item.unit}`.toUpperCase();
-      const existing = map.get(key);
-      if (existing) {
-        existing.quantity += item.quantity;
-      } else {
-        map.set(key, { ...item });
-      }
-    };
-
     const headerStyle = {
       font: { bold: true, color: { rgb: 'FFFFFF' } },
       fill: { fgColor: { rgb: '004071' } },
@@ -364,108 +318,112 @@ const ProjectReviewModal: React.FC<ProjectReviewModalProps> = ({ project }) => {
     };
 
     project.categories.forEach(category => {
-      const apuMap = new Map<string, {
-        category: string;
-        material: string;
-        mechanismGroup: string;
-        name: string;
-        diameter: string;
-        unit: string;
-        quantity: number;
-        unitWeight: number;
-        price: number;
+      const materialData = new Map<string, {
+        pieceMap: Map<string, {
+          name: string;
+          unit: string;
+          quantity: number;
+          price: number;
+          totalWeight: number;
+        }>;
+        materialWeight: number;
       }>();
 
       category.analyses.forEach(analysis => {
         (analysis.result?.nodes || []).forEach(node => {
           const multiplier = Math.max(splitNodeIds(node.id).length, 1);
           node.pieces.forEach(piece => {
-            const name = (piece.name || '').trim().toUpperCase();
-            const material = String(piece.material || 'OTRO').toUpperCase();
+            const normalizedName = (piece.name || '').trim().toUpperCase();
             const mechanismGroup = (piece.hasMechanism ?? inferHasMechanism(piece)) ? 'CON MECANISMO' : 'SIN MECANISMO';
+            const materialKey = `${String(piece.material || 'OTRO').toUpperCase()} / ${mechanismGroup}`;
+            if (!materialData.has(materialKey)) {
+              materialData.set(materialKey, { pieceMap: new Map(), materialWeight: 0 });
+            }
+
+            const group = materialData.get(materialKey)!;
+            const unionKind = piece.union || getUnionKind(piece, project);
+            const unionCount = typeof piece.unionCount === 'number' ? piece.unionCount : (shouldAutoAddUnions(piece) ? 2 : 0);
+            const key = `${normalizedName}-${piece.diameter || 'S/D'}-${unionKind}-${unionCount}`.toUpperCase();
+            const existing = group.pieceMap.get(key);
             const quantity = (piece.quantity || 0) * multiplier;
-            addApuRow(apuMap, {
-              category: 'PIEZAS',
-              material,
-              mechanismGroup,
-              name,
-              diameter: piece.diameter || 'S/D',
-              unit: getUnit(name),
-              quantity,
-              unitWeight: piece.weight || 0,
-              price: getSuggestedPrice(name)
-            });
+            const unitWeight = piece.weight || 0;
+            const addedWeight = quantity * unitWeight;
+            group.materialWeight += addedWeight;
+
+            if (existing) {
+              existing.quantity += quantity;
+              existing.totalWeight += addedWeight;
+            } else {
+              const lowerName = normalizedName.toLowerCase();
+              let unit = 'Un';
+              if (lowerName.includes('tubo') || lowerName.includes('cañería') || lowerName.includes('caneria')) unit = 'm';
+              else if (lowerName.includes('hormigón') || lowerName.includes('hormigon')) unit = 'm3';
+
+              const priceKey = Object.keys(SUGGESTED_PRICES).find(priceName => normalizeText(normalizedName).includes(normalizeText(priceName)));
+              group.pieceMap.set(key, {
+                name: `${normalizedName} ${piece.diameter || 'S/D'} U:${unionCount} ${unionKind}`.trim(),
+                unit,
+                quantity,
+                price: priceKey ? SUGGESTED_PRICES[priceKey] : 0,
+                totalWeight: addedWeight
+              });
+            }
 
             getUnionBreakdown(piece, project).forEach(part => {
               const displayDiameter = formatUnionDiameterForKind(part.unionKind, part.diameter);
               const unionName = `UNION ${part.unionKind}`.toUpperCase();
-              addApuRow(apuMap, {
-                category: 'UNIONES',
-                material: 'UNIONES',
-                mechanismGroup: 'NO APLICA',
-                name: unionName,
-                diameter: displayDiameter,
-                unit: 'Un',
-                quantity: quantity * part.count,
-                unitWeight: 0,
-                price: SUGGESTED_PRICES.UNION
-              });
+              const unionLabel = `${unionName} ${displayDiameter}`.trim();
+              const unionKey = `${unionLabel}-${displayDiameter}`.toUpperCase();
+              const existingUnion = group.pieceMap.get(unionKey);
+              const unionQuantity = quantity * part.count;
+              if (existingUnion) {
+                existingUnion.quantity += unionQuantity;
+              } else {
+                group.pieceMap.set(unionKey, {
+                  name: unionLabel,
+                  unit: 'Un',
+                  quantity: unionQuantity,
+                  price: SUGGESTED_PRICES.UNION || 0,
+                  totalWeight: 0
+                });
+              }
             });
           });
         });
       });
 
-      const rows: Array<Array<string | number>> = [[
-        'Categoria',
-        'Material',
-        'Mecanismo',
-        'Pieza',
-        'Diametro',
-        'Unidad',
-        'Cantidad',
-        'Peso unitario kg',
-        'Peso total kg',
-        'Precio referencia'
-      ]];
+      const rows: Array<Array<string | number>> = [];
+      const blockRows: number[] = [];
+      const headerRows: number[] = [];
+      const sortedMaterials = Array.from(materialData.keys()).sort();
+      sortedMaterials.forEach(material => {
+        const group = materialData.get(material)!;
+        blockRows.push(rows.length);
+        rows.push([`# --- BLOQUE MATERIAL: ${material} (Peso Total: ${group.materialWeight.toFixed(2)} kg) --- #`, '', '', '']);
+        headerRows.push(rows.length);
+        rows.push(['Nombre', 'Unidad', 'Cantidad', 'Precio']);
+        Array.from(group.pieceMap.values())
+          .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))
+          .forEach(item => {
+            rows.push([item.name, item.unit, item.quantity, item.price || '']);
+          });
+        rows.push(['', '', '', '']);
+      });
 
-      Array.from(apuMap.values())
-        .sort((a, b) => a.category.localeCompare(b.category) || a.material.localeCompare(b.material) || a.mechanismGroup.localeCompare(b.mechanismGroup) || a.name.localeCompare(b.name) || a.diameter.localeCompare(b.diameter, undefined, { numeric: true }))
-        .forEach(item => rows.push([
-          item.category,
-          item.material,
-          item.mechanismGroup,
-          item.name,
-          item.diameter,
-          item.unit,
-          item.quantity,
-          item.unitWeight || '',
-          item.unitWeight ? Number((item.quantity * item.unitWeight).toFixed(2)) : '',
-          item.price || ''
-        ]));
-
-      if (rows.length === 1) rows.push(['Sin piezas', '', '', '', '', '', '', '', '', '']);
+      if (rows.length === 0) rows.push(['Sin piezas', '', '', '']);
 
       const worksheet = XLSX.utils.aoa_to_sheet(rows);
       worksheet['!cols'] = [
-        { wch: 14 },
-        { wch: 18 },
-        { wch: 18 },
-        { wch: 34 },
-        { wch: 16 },
-        { wch: 10 },
+        { wch: 56 },
         { wch: 12 },
-        { wch: 16 },
-        { wch: 16 },
-        { wch: 18 }
+        { wch: 12 },
+        { wch: 14 }
       ];
-      worksheet['!autofilter'] = {
-        ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: Math.max(rows.length - 1, 0), c: 9 } })
-      };
-      (worksheet as any)['!freeze'] = { ySplit: 1, topLeftCell: 'A2', activePane: 'bottomLeft', state: 'frozen' };
+      worksheet['!merges'] = blockRows.map(rowIndex => ({ s: { r: rowIndex, c: 0 }, e: { r: rowIndex, c: 3 } }));
       for (let r = 0; r < rows.length; r += 1) {
-        for (let c = 0; c < 10; c += 1) {
+        for (let c = 0; c < 4; c += 1) {
           const ref = XLSX.utils.encode_cell({ r, c });
-          if (worksheet[ref]) worksheet[ref].s = r === 0 ? headerStyle : dataStyle;
+          if (worksheet[ref]) worksheet[ref].s = blockRows.includes(r) || headerRows.includes(r) ? headerStyle : dataStyle;
         }
       }
       XLSX.utils.book_append_sheet(workbook, worksheet, sanitizeSheetName(`APU ${category.name}`));

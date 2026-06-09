@@ -1,0 +1,24 @@
+{
+  "name": "HidroScan - Gestor de Nudos",
+  "short_name": "HidroScan",
+  "description": "Gestor experto de nudos e inventarios para redes de agua potable.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#004071",
+  "icons": [
+    {
+      "src": "/icons/nudos-pwa.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/nudos-pwa.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
