@@ -32,13 +32,13 @@ export async function analyzeHydraulicPlan(base64Data: string): Promise<Analysis
   inFlight = true;
 
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
     const mimeTypeMatch = base64Data.match(/^data:([^;]+);base64,/);
     const mimeType = mimeTypeMatch ? mimeTypeMatch[1] : "image/png";
     const base64Clean = base64Data.includes(",") ? base64Data.split(",")[1] : base64Data;
 
-    const MODEL_ID = "gemini-3-flash-preview";
+    const MODEL_ID = "gemini-2.0-flash";
 
     const response: GenerateContentResponse = await ai.models.generateContent({
       model: MODEL_ID,

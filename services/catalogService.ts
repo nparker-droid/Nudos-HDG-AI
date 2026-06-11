@@ -1,4 +1,5 @@
 import { CatalogItem } from '../types.ts';
+import { normalizeText } from '../utils/normalization.ts';
 
 export const parseCatalogCSV = (csvText: string): CatalogItem[] => {
     const lines = csvText.split('\n');
@@ -60,14 +61,6 @@ export const parseCatalogCSV = (csvText: string): CatalogItem[] => {
     return items;
 };
 
-// Normalizes text for better matching: removes accents, converts to uppercase
-const normalizeText = (text: string) => {
-    return text
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .toUpperCase()
-        .trim();
-};
 
 export const findWeightInCatalog = (
     pieceName: string,

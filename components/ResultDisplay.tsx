@@ -1,9 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { AnalysisResult, HydraulicNode, Piece, NodeMaterial, Project, CatalogItem } from '../types.ts';
 import { findWeightInCatalog } from '../services/catalogService.ts';
-
-const normalizeText = (value: string) =>
-  value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim();
+import { normalizeText } from '../utils/normalization.ts';
 
 interface ResultDisplayProps {
   analysisId: string;
@@ -319,8 +317,6 @@ const NodeCard: React.FC<NodeCardProps> = ({ node, index, onUpdate, onRemove, on
 };
 
 const ResultDisplay: React.FC<ResultDisplayProps> = ({ analysisId, result, searchTerm, duplicateIds, onUpdateNode, onRemoveNode, onRemoveAnalysis, onSaveToLibrary, onProcess, onCopyNode, isManual, project, onAddNode, onExportTable, catalogItems }) => {
-
-  console.log("💎 [ResultDisplay.tsx] Recibiendo catalogItems:", catalogItems?.length || 0);
 
   // Explicitly type filteredNodes as HydraulicNode[] to avoid inference issues.
   const filteredNodes = useMemo<HydraulicNode[]>(() => {

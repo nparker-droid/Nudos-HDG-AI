@@ -1,5 +1,6 @@
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { normalizeText } from './utils/normalization.ts';
 import FileUploader from './components/FileUploader.tsx';
 import ResultDisplay from './components/ResultDisplay.tsx';
 import Sidebar from './components/Sidebar.tsx';
@@ -49,9 +50,6 @@ const SUGGESTED_PRICES: Record<string, number> = {
   'ANCLAJE': 180000
 };
 
-const normalizeText = (value: string) =>
-  value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim();
-
 const splitNodeIds = (id: string) => id.split(',').map(part => part.trim()).filter(Boolean);
 
 const getNodeIdentityKeys = (node: Pick<HydraulicNode, 'id' | 'type'>) =>
@@ -71,19 +69,19 @@ const getPrefixLabel = (type: string) => {
 
 const getFullTypeLabel = (type: string) => {
   const labelMap: Record<string, string> = {
-    'Corte': 'Camaras de Corte',
-    'Ventosa': 'Camaras de Ventosa',
-    'Desague': 'Camaras de Desague',
-    'Reductora': 'Valvulas Reductoras',
-    'Grifo': 'Camaras de Grifo',
-    'Numerico': 'Nudos Numericos',
-    'Camara': 'Camaras con nomenclatura de plano',
+    'Corte': 'Cámaras de Corte',
+    'Ventosa': 'Cámaras de Ventosa',
+    'Desague': 'Cámaras de Desagüe',
+    'Reductora': 'Válvulas Reductoras',
+    'Grifo': 'Cámaras de Grifo',
+    'Numerico': 'Nudos Numéricos',
+    'Camara': 'Cámaras con nomenclatura de plano',
     'Otro': 'Otros elementos'
   };
   return labelMap[type] || type;
 };
 
-const formatIdsForDisplayGlobal = (idStr: string) => idStr;
+const formatIdsForDisplayGlobal = (idStr: string, _type?: string): string => idStr;
 
 const mechanismKeywords = ['VALVULA', 'VENTOSA', 'REDUCTORA', 'JUNTA AUTOBLOQUEANTE', 'AUTOBLOQUEANTE', 'HIDRANTE', 'GRIFO'];
 const noAutoUnionKeywords = ['UNION', 'BRIDA', 'FLANGE', 'JUNTA', 'PERNO', 'PERNOS', 'TUBO', 'CANERIA', 'CAÑERIA', 'HORMIGON', 'ANCLAJE'];
@@ -229,6 +227,7 @@ const App: React.FC = () => {
     missing: false
   });
   const [nodesToReportMissing, setNodesToReportMissing] = useState(new Set<string>());
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const toggleSection = (section: string) => {
     setCollapsedSections(prev => ({ ...prev, [section]: !prev[section] }));
@@ -279,15 +278,19 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (projects.length > 0 || libraryNodes.length > 0 || catalogItems.length > 0) {
-      setIsAutoSaving(true);
-      localStorage.setItem('hidrogestion_v10_projects', JSON.stringify(projects));
-      localStorage.setItem('hidrogestion_v10_library', JSON.stringify(libraryNodes));
-      localStorage.setItem('hidrogestion_v10_catalog', JSON.stringify(catalogItems));
-      localStorage.setItem('hidrogestion_v10_credits', credits.toString());
-
-      const timer = setTimeout(() => setIsAutoSaving(false), 800);
-      return () => clearTimeout(timer);
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = setTimeout(() => {
+        setIsAutoSaving(true);
+        localStorage.setItem('hidrogestion_v10_projects', JSON.stringify(projects));
+        localStorage.setItem('hidrogestion_v10_library', JSON.stringify(libraryNodes));
+        localStorage.setItem('hidrogestion_v10_catalog', JSON.stringify(catalogItems));
+        localStorage.setItem('hidrogestion_v10_credits', credits.toString());
+        setTimeout(() => setIsAutoSaving(false), 800);
+      }, 500);
     }
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
   }, [projects, libraryNodes, credits, catalogItems]);
 
   const activeProject = useMemo(() => projects.find(p => p.id === activeProjectId), [projects, activeProjectId]);
@@ -400,34 +403,6 @@ const App: React.FC = () => {
       const allKeys = missingNodesGlobal.map(n => `${n.type}:${n.number}`);
       setNodesToReportMissing(new Set(allKeys));
     }
-  };
-
-  const getPrefixLabel = (type: string) => {
-    const prefixMap: Record<string, string> = {
-      'Corte': 'C',
-      'Ventosa': 'V',
-      'Desague': 'D',
-      'Reductora': 'R',
-      'Grifo': 'G',
-      'Numerico': ''
-    };
-    return prefixMap[type] || '';
-  };
-
-  const getFullTypeLabel = (type: string) => {
-    const labelMap: Record<string, string> = {
-      'Corte': 'Cámaras de Corte',
-      'Ventosa': 'Cámaras de Ventosa',
-      'Desague': 'Cámaras de Desagüe',
-      'Reductora': 'Válvulas Reductoras',
-      'Grifo': 'Cámaras de Grifo',
-      'Numerico': 'Nudos Numéricos'
-    };
-    return labelMap[type] || type;
-  };
-
-  const formatIdsForDisplayGlobal = (idStr: string, type: string) => {
-    return idStr;
   };
 
   const handleCopyNode = (node: HydraulicNode) => {
@@ -1576,9 +1551,6 @@ const App: React.FC = () => {
                     )}
 
                     {activeCategory?.analyses.map((analysis, index) => {
-                      if (index === 0) {
-                        console.log("💎 [App.tsx] Pasando catalogItems a AnalysisCard:", catalogItems?.length || 0);
-                      }
                       return (
                         <AnalysisCard
                           key={analysis.id}
