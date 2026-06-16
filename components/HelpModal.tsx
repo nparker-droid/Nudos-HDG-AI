@@ -228,35 +228,25 @@ const SECTIONS: Section[] = [
     id: 'drive', icon: 'fa-brands fa-google-drive', label: 'Drive & Backup',
     blocks: [
       {
-        type: 'rows', title: 'Contenido del backup',
+        type: 'rows', title: 'Qué se respalda',
         rows: [
-          { key: 'projects',     val: 'Todos los proyectos con categorías, análisis y nudos' },
-          { key: 'libraryNodes', val: 'Biblioteca de nudos tipo reutilizables' },
-          { key: 'credits',      val: 'Créditos de análisis IA consumidos' },
-          { key: 'Catálogo',     val: 'No se incluye — se carga desde BD_OPTIMIZADA integrada' },
+          { key: 'Proyectos',  val: 'Todos los proyectos con sus capítulos, análisis y nudos' },
+          { key: 'Biblioteca', val: 'Nudos tipo guardados para reutilizar en otros proyectos' },
+          { key: 'Catálogo',   val: 'No se incluye en el backup — se carga automáticamente al iniciar' },
         ],
       },
       {
-        type: 'rows', title: 'Carpeta en Drive',
+        type: 'rows', title: 'Comportamiento',
         rows: [
-          { key: 'Ruta',         val: 'Mi unidad / Nudos Hidrogestion / nudos-backup.json' },
-          { key: 'Formato',      val: 'JSON v2.0 — legible y portable' },
-          { key: 'Auto-save',    val: 'Cada 5 min mientras Drive esté conectado' },
-          { key: 'Reconexión',   val: 'Silenciosa al recargar — token persiste 1 h en localStorage' },
+          { key: 'Ubicación',   val: 'Mi unidad / Nudos Hidrogestion / nudos-backup.json' },
+          { key: 'Auto-save',   val: 'Guarda automáticamente cada 5 minutos mientras Drive esté conectado' },
+          { key: 'Reconexión',  val: 'Al recargar la página se reconecta sin pedir credenciales de nuevo' },
+          { key: 'Restaurar',   val: 'Sobreescribe el estado actual con el último backup guardado en Drive' },
         ],
       },
       {
-        type: 'rows', title: 'Configuración requerida (una sola vez)',
-        rows: [
-          { key: '1. Google Cloud', val: 'Crear proyecto → habilitar Google Drive API' },
-          { key: '2. OAuth Client', val: 'Tipo "Aplicación web" → agregar dominio Vercel como origen autorizado' },
-          { key: '3. Vercel',       val: 'Environment Variable: VITE_GOOGLE_CLIENT_ID = <client_id>' },
-          { key: '4. Redespliegue', val: 'Necesario si la variable se agregó post-deploy' },
-        ],
-      },
-      {
-        type: 'alert', level: 'info', icon: 'fa-circle-info',
-        text: 'Cada proyecto tiene su propio OAuth Client ID. El Client ID de otra app (ej. APU-HDG) no puede reutilizarse a menos que el dominio de esta app esté en sus orígenes autorizados.',
+        type: 'alert', level: 'tip', icon: 'fa-lightbulb',
+        text: 'Usa "Guardar en Drive" antes de compartir el equipo o trabajar desde otro navegador. La copia de seguridad local (.json) sirve para mover proyectos entre equipos sin conexión a internet.',
       },
     ],
   },
@@ -266,14 +256,12 @@ const SECTIONS: Section[] = [
     id: 'ia', icon: 'fa-solid fa-microchip', label: 'Análisis IA',
     blocks: [
       {
-        type: 'rows', title: 'Modelo y flujo',
+        type: 'rows', title: 'Funcionamiento',
         rows: [
-          { key: 'Modelo',       val: 'Gemini 2.0 Flash — Google Generative AI' },
-          { key: 'Entrada',      val: 'Imagen base64 + esquema JSON estructurado' },
-          { key: 'Salida',       val: 'Array de nudos con piezas, materiales, diámetros y cantidades' },
-          { key: 'Créditos',     val: '1 crédito por imagen procesada — se descuenta al completar' },
-          { key: 'Concurrencia', val: 'Una solicitud a la vez por sesión (flag inFlight)' },
-          { key: 'Reintento',    val: 'Botón re-analizar disponible en cada análisis completado' },
+          { key: 'Créditos',   val: '1 crédito por imagen procesada — se descuenta al completar el análisis' },
+          { key: 'Procesamiento', val: 'Una imagen a la vez — espera que termine antes de subir otra' },
+          { key: 'Reintento',  val: 'El botón re-analizar reprocesa la imagen si el resultado fue incorrecto' },
+          { key: 'Manual',     val: 'Si la IA no detecta correctamente, usa "Agregar Nudo" para ingresar a mano' },
         ],
       },
       {
