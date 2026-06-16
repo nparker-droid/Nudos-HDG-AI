@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { AnalysisResult, HydraulicNode, Piece, NodeMaterial, Project, CatalogItem } from '../types.ts';
-import { findWeightInCatalog } from '../services/catalogService.ts';
+import { findInCatalog } from '../services/catalogService.ts';
 import { normalizeText } from '../utils/normalization.ts';
 
 interface ResultDisplayProps {
@@ -31,6 +31,7 @@ interface PieceRowProps {
 const PieceRow: React.FC<PieceRowProps> = ({ piece, onUpdate, onRemove, catalogItems }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [localWeight, setLocalWeight] = useState(piece.weight !== undefined ? piece.weight.toString().replace('.', ',') : '');
+  const [localPrice, setLocalPrice] = useState(piece.price !== undefined ? piece.price.toString() : '');
 
   const isIncomplete = !piece.name || !piece.material || !piece.diameter || piece.quantity <= 0;
   const inferredUnionCount = piece.unionCount ?? (piece.name && !/(union|brida|flange|junta|perno|tubo|caner|caner|hormig|anclaje)/i.test(piece.name) ? 2 : 0);
@@ -42,6 +43,13 @@ const PieceRow: React.FC<PieceRowProps> = ({ piece, onUpdate, onRemove, catalogI
     }
   }, [piece.weight]);
 
+  useEffect(() => {
+    const parentPriceStr = piece.price !== undefined ? piece.price.toString() : '';
+    if (parseInt(localPrice) !== piece.price) {
+      setLocalPrice(parentPriceStr);
+    }
+  }, [piece.price]);
+
   const handleWeightChange = (val: string) => {
     let maskedVal = val.replace(/\./g, ',');
     const parts = maskedVal.split(',');
@@ -51,18 +59,27 @@ const PieceRow: React.FC<PieceRowProps> = ({ piece, onUpdate, onRemove, catalogI
     onUpdate({ weight: isNaN(floatVal) ? 0 : floatVal });
   };
 
+  const handlePriceChange = (val: string) => {
+    setLocalPrice(val);
+    const num = parseInt(val.replace(/\D/g, ''));
+    onUpdate({ price: isNaN(num) ? undefined : num });
+  };
+
   const attemptCatalogMatch = () => {
     if (!catalogItems || catalogItems.length === 0) {
-      alert('Tu catalogo esta vacio o no se ha cargado correctamente.');
+      alert('El catálogo está vacío. Importa el archivo BD_OPTIMIZADA_NUDOS desde el botón "Catálogo".');
       return;
     }
     if (!piece.name || !piece.diameter || !piece.material) {
-      alert('Para buscar en el catalogo, la pieza debe tener Nombre, Material y Diametro.');
+      alert('La pieza debe tener Nombre, Material y Diámetro para buscar en el catálogo.');
       return;
     }
-    const matchWeight = findWeightInCatalog(piece.name, piece.diameter, piece.material, catalogItems);
-    if (matchWeight !== null) onUpdate({ weight: matchWeight });
-    else alert(`No se encontro el peso exacto en el catalogo para:\n"${piece.name} ${piece.material} ${piece.diameter}"`);
+    const match = findInCatalog(piece.name, piece.diameter, piece.material, catalogItems);
+    if (match.weight !== null) {
+      onUpdate({ weight: match.weight, price: match.price ?? undefined });
+    } else {
+      alert(`No se encontró en el catálogo:\n"${piece.name} ${piece.material} ${piece.diameter}"`);
+    }
   };
 
   return (
@@ -110,10 +127,20 @@ const PieceRow: React.FC<PieceRowProps> = ({ piece, onUpdate, onRemove, catalogI
         <button
           onClick={attemptCatalogMatch}
           className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover/weight:opacity-100 transition-opacity bg-[#004071] text-[#D9E021] rounded-full w-5 h-5 flex items-center justify-center shadow-lg hover:scale-110"
-          title="Buscar en catalogo"
+          title="Buscar peso y precio en catálogo"
         >
           <i className="fa-solid fa-book-open text-[8px]"></i>
         </button>
+      </td>
+      <td className="px-4 py-4 text-center">
+        <input
+          type="text"
+          placeholder="—"
+          value={localPrice}
+          onChange={e => handlePriceChange(e.target.value)}
+          className="bg-transparent border-none text-center font-mono text-[11px] text-[#004071] w-full outline-none"
+          title="Precio unitario CLP sin IVA"
+        />
       </td>
       <td className="px-6 py-4 text-right">
         <input type="number" value={piece.quantity} onChange={e => onUpdate({ quantity: parseInt(e.target.value) || 0 })} className={`bg-transparent border-none text-right font-black w-full outline-none text-base ${piece.quantity <= 0 ? 'text-amber-600' : 'text-[#004071]'}`} />
@@ -194,12 +221,11 @@ const NodeCard: React.FC<NodeCardProps> = ({ node, index, onUpdate, onRemove, on
       updatedPiece.unionCount = /union|unión|brida|flange|junta|perno|tubo|cañer|hormig|anclaje/i.test(updatedPiece.name) ? 0 : 2;
     }
 
-    // Auto-search weight if a property changed and weight is 0 or wasn't provided directly
-    if (updates.name || updates.diameter || updates.material) {
-      if (!updates.weight) {
-        const matchW = findWeightInCatalog(updatedPiece.name, updatedPiece.diameter, updatedPiece.material, catalogItems);
-        if (matchW !== null) updatedPiece.weight = matchW;
-      }
+    // Auto-buscar peso y precio cuando cambia nombre, diámetro o material
+    if ((updates.name || updates.diameter || updates.material) && !updates.weight) {
+      const match = findInCatalog(updatedPiece.name, updatedPiece.diameter, updatedPiece.material, catalogItems);
+      if (match.weight !== null) updatedPiece.weight = match.weight;
+      if (match.price !== null) updatedPiece.price = match.price ?? undefined;
     }
 
     newPieces[idx] = updatedPiece;
@@ -286,13 +312,14 @@ const NodeCard: React.FC<NodeCardProps> = ({ node, index, onUpdate, onRemove, on
       <div className="overflow-x-auto w-full">
         <table className="w-full table-fixed text-left text-[13px]">
           <colgroup>
-            <col className="w-[30%]" />
-            <col className="w-[12%]" />
-            <col className="w-[16%]" />
-            <col className="w-[12%]" />
+            <col className="w-[27%]" />
             <col className="w-[10%]" />
+            <col className="w-[13%]" />
             <col className="w-[10%]" />
-            <col className="w-[10%]" />
+            <col className="w-[11%]" />
+            <col className="w-[8%]" />
+            <col className="w-[8%]" />
+            <col className="w-[13%]" />
           </colgroup>
           <thead className="bg-[#f8fafc] text-slate-400 uppercase text-[9px] tracking-[0.2em]">
             <tr>
@@ -300,6 +327,7 @@ const NodeCard: React.FC<NodeCardProps> = ({ node, index, onUpdate, onRemove, on
               <th className="px-6 py-5 font-black text-center">Mat.</th>
               <th className="px-6 py-5 font-black text-center">Diam.</th>
               <th className="px-6 py-5 font-black text-center">Peso(kg)</th>
+              <th className="px-6 py-5 font-black text-center">$ CLP</th>
               <th className="px-6 py-5 font-black text-right">Cant.</th>
               <th className="px-6 py-5 font-black text-center">Mec.</th>
               <th className="px-6 py-5 font-black text-center">Uniones</th>

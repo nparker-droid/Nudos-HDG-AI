@@ -14,7 +14,7 @@ import AuditReportModal from './components/AuditReportModal.tsx';
 import CatalogModal from './components/CatalogModal.tsx';
 import ProjectReviewModal from './components/ProjectReviewModal.tsx';
 import HelpModal from './components/HelpModal.tsx';
-import { findWeightInCatalog } from './services/catalogService.ts';
+import { findWeightInCatalog, parseCatalogCSV } from './services/catalogService.ts';
 
 const INITIAL_CREDITS = 50;
 
@@ -272,8 +272,31 @@ const App: React.FC = () => {
 
     if (savedProjects) try { setProjects(JSON.parse(savedProjects)); } catch (e) { }
     if (savedLibrary) try { setLibraryNodes(JSON.parse(savedLibrary)); } catch (e) { }
-    if (savedCatalog) try { setCatalogItems(JSON.parse(savedCatalog)); } catch (e) { }
     if (savedCredits !== null) setCredits(parseInt(savedCredits));
+
+    // Carga el catálogo: verifica que sea el nuevo formato (campo tipoPieza)
+    const loadDefaultCatalog = () => {
+      fetch('/catalog.csv')
+        .then(r => r.text())
+        .then(text => {
+          const items = parseCatalogCSV(text);
+          if (items.length > 0) setCatalogItems(items);
+        })
+        .catch(() => {});
+    };
+    if (savedCatalog) {
+      try {
+        const parsed = JSON.parse(savedCatalog);
+        // Si el primer item tiene tipoPieza es el nuevo formato; si tiene 'name' es el viejo
+        if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].tipoPieza !== undefined) {
+          setCatalogItems(parsed);
+        } else {
+          loadDefaultCatalog();
+        }
+      } catch (e) { loadDefaultCatalog(); }
+    } else {
+      loadDefaultCatalog();
+    }
   }, []);
 
   useEffect(() => {
@@ -602,9 +625,12 @@ const App: React.FC = () => {
             if (lowerName.includes('tubo') || lowerName.includes('cañería')) unit = "m";
             else if (lowerName.includes('hormigón')) unit = "m3";
 
-            let suggestedPrice = 0;
-            const priceKey = Object.keys(SUGGESTED_PRICES).find(k => lowerName.includes(k.toLowerCase()));
-            if (priceKey) suggestedPrice = SUGGESTED_PRICES[priceKey];
+            // Precio: primero el del catálogo (guardado en pieza), luego la tabla de referencia
+            let suggestedPrice = normalizedPiece.price ?? 0;
+            if (!suggestedPrice) {
+              const priceKey = Object.keys(SUGGESTED_PRICES).find(k => lowerName.includes(k.toLowerCase()));
+              if (priceKey) suggestedPrice = SUGGESTED_PRICES[priceKey];
+            }
 
             mGroup.pieceMap.set(key, {
               name: `${normalizedName} ${normalizedPiece.diameter}`.trim(),
@@ -645,10 +671,11 @@ const App: React.FC = () => {
     sortedMaterials.forEach(material => {
       const group = materialData.get(material)!;
       csvContent += `# --- BLOQUE MATERIAL: ${material} (Peso Total: ${group.materialWeight.toFixed(2)} kg) --- #\n`;
-      csvContent += "Nombre;Unidad;Cantidad;Precio\n";
+      csvContent += "Nombre;Unidad;Cantidad;Peso Unit.(kg);Precio Unit.(CLP s/IVA)\n";
 
       Array.from(group.pieceMap.values()).forEach(item => {
-        csvContent += `${item.name};${item.unit};${item.quantity};${item.price || ''}\n`;
+        const unitWeight = item.quantity > 0 ? item.totalWeight / item.quantity : 0;
+        csvContent += `${item.name};${item.unit};${item.quantity};${unitWeight > 0 ? unitWeight.toFixed(3).replace('.', ',') : ''};${item.price || ''}\n`;
       });
       csvContent += "\n";
     });

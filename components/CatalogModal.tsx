@@ -9,6 +9,8 @@ interface CatalogModalProps {
     onUpdateCatalog: (items: CatalogItem[]) => void;
 }
 
+const dedupKey = (i: CatalogItem) => `${i.tipoPieza}|${i.diametroMm}|${i.material}|${i.resistencia}`;
+
 export default function CatalogModal({ isOpen, onClose, catalogItems, onUpdateCatalog }: CatalogModalProps) {
     const [searchTerm, setSearchTerm] = useState('');
     const [pasteData, setPasteData] = useState('');
@@ -16,52 +18,49 @@ export default function CatalogModal({ isOpen, onClose, catalogItems, onUpdateCa
 
     if (!isOpen) return null;
 
+    const merge = (incoming: CatalogItem[]) => {
+        const existing = new Set(catalogItems.map(dedupKey));
+        const newItems = incoming.filter(i => !existing.has(dedupKey(i)));
+        onUpdateCatalog([...catalogItems, ...newItems]);
+    };
+
     const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
-
         const reader = new FileReader();
-        reader.onload = (event) => {
-            const text = event.target?.result as string;
-            const parsedItems = parseCatalogCSV(text);
-            if (parsedItems.length > 0) {
-                // Merge with existing avoiding duplicates by name/diam/material
-                const currentSet = new Set(catalogItems.map(i => `${i.name}|${i.diameter}|${i.material}`));
-                const newItems = parsedItems.filter(i => !currentSet.has(`${i.name}|${i.diameter}|${i.material}`));
-                onUpdateCatalog([...catalogItems, ...newItems]);
-            }
+        reader.onload = ev => {
+            const parsed = parseCatalogCSV(ev.target?.result as string);
+            if (parsed.length > 0) merge(parsed);
+            else alert('No se encontraron datos válidos en el archivo.');
         };
-        reader.readAsText(file);
+        reader.readAsText(file, 'UTF-8');
         if (fileInputRef.current) fileInputRef.current.value = '';
     };
 
     const handlePasteSubmit = () => {
         if (!pasteData.trim()) return;
-        const parsedItems = parseCatalogCSV(pasteData);
-        if (parsedItems.length > 0) {
-            const currentSet = new Set(catalogItems.map(i => `${i.name}|${i.diameter}|${i.material}`));
-            const newItems = parsedItems.filter(i => !currentSet.has(`${i.name}|${i.diameter}|${i.material}`));
-            onUpdateCatalog([...catalogItems, ...newItems]);
-            setPasteData('');
-        }
+        const parsed = parseCatalogCSV(pasteData);
+        if (parsed.length > 0) { merge(parsed); setPasteData(''); }
+        else alert('No se pudieron interpretar los datos pegados.');
     };
 
     const handleClearCatalog = () => {
-        if (confirm('¿Estás seguro de querer vaciar completamente el catálogo?')) {
-            onUpdateCatalog([]);
-        }
+        if (confirm('¿Estás seguro de querer vaciar completamente el catálogo?')) onUpdateCatalog([]);
     };
 
+    const q = searchTerm.toLowerCase();
     const filteredItems = catalogItems.filter(item =>
-        item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.material.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.diameter.toString().includes(searchTerm) ||
-        item.diameterInches.includes(searchTerm)
+        item.tipoPieza.toLowerCase().includes(q) ||
+        item.material.toLowerCase().includes(q) ||
+        item.diametroMm.toString().includes(q) ||
+        item.diametroPulg.includes(q) ||
+        item.resistencia.toLowerCase().includes(q) ||
+        item.descripcion.toLowerCase().includes(q)
     );
 
     return (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 sm:p-6 font-['Inter']">
-            <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-5xl flex flex-col max-h-[90vh] overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-6xl flex flex-col max-h-[90vh] overflow-hidden animate-in zoom-in-95 duration-200">
 
                 <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between bg-slate-50 shrink-0">
                     <div>
@@ -83,21 +82,16 @@ export default function CatalogModal({ isOpen, onClose, catalogItems, onUpdateCa
                         <div className="col-span-1 lg:col-span-2 bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
                             <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Añadir desde Archivo</h4>
                             <div className="flex items-center gap-4">
-                                <input
-                                    type="file"
-                                    accept=".csv"
-                                    ref={fileInputRef}
-                                    onChange={handleFileUpload}
-                                    className="hidden"
-                                />
+                                <input type="file" accept=".csv" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
                                 <button
                                     onClick={() => fileInputRef.current?.click()}
                                     className="px-6 py-3 bg-[#004071] text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-md hover:bg-[#002D50] transition-colors flex items-center gap-2"
                                 >
-                                    <i className="fa-solid fa-file-csv"></i> Importar CSV
+                                    <i className="fa-solid fa-file-csv"></i> Importar BD_OPTIMIZADA CSV
                                 </button>
                                 <div className="text-[10px] text-slate-400 leading-tight">
-                                    <p>Formato esperado CSV: <span className="font-bold text-slate-600">Nombre_Estandar; Diámetro; Peso_kg; Diametro_Pulgadas; Materialidad</span></p>
+                                    <p>Formato: <span className="font-bold text-slate-600">BD_OPTIMIZADA_NUDOS (13 columnas, separador coma)</span></p>
+                                    <p className="mt-0.5 text-slate-400">Codigo_ID, Categoria, Tipo_Pieza, Material, Diametro_mm, Diametro_pulg, Resistencia, Union, Peso_valor, Peso_unidad, Precio_sin_IVA_CLP, Origen, Descripcion</p>
                                 </div>
                             </div>
                         </div>
@@ -120,9 +114,9 @@ export default function CatalogModal({ isOpen, onClose, catalogItems, onUpdateCa
                             <textarea
                                 value={pasteData}
                                 onChange={e => setPasteData(e.target.value)}
-                                placeholder="Pega líneas desde Excel o CSV aquí..."
+                                placeholder="Pega líneas del CSV aquí (formato BD_OPTIMIZADA)..."
                                 className="flex-grow h-20 bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-mono text-slate-600 focus:bg-white focus:border-[#88C13E] outline-none resize-none"
-                            ></textarea>
+                            />
                             <button
                                 onClick={handlePasteSubmit}
                                 disabled={!pasteData.trim()}
@@ -140,48 +134,60 @@ export default function CatalogModal({ isOpen, onClose, catalogItems, onUpdateCa
                                 <i className="fa-solid fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
                                 <input
                                     type="text"
-                                    placeholder="Buscar por nombre o material..."
+                                    placeholder="Buscar por nombre, material, resistencia..."
                                     value={searchTerm}
                                     onChange={e => setSearchTerm(e.target.value)}
-                                    className="pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-[#004071] w-64 focus:border-[#88C13E] outline-none"
+                                    className="pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-[#004071] w-72 focus:border-[#88C13E] outline-none"
                                 />
                             </div>
                         </div>
 
                         <div className="overflow-x-auto flex-grow">
-                            <table className="w-full text-left border-collapse">
+                            <table className="w-full text-left border-collapse text-xs">
                                 <thead>
                                     <tr className="bg-slate-50 border-b border-slate-200">
-                                        <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest w-1/3">Nombre</th>
-                                        <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest w-1/6">Material</th>
-                                        <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest w-1/6">D. (mm)</th>
-                                        <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest w-1/6">D. (pulg)</th>
-                                        <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right w-1/6">Peso (kg)</th>
+                                        <th className="px-3 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Tipo Pieza</th>
+                                        <th className="px-3 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Material</th>
+                                        <th className="px-3 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">D. (mm)</th>
+                                        <th className="px-3 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">D. (pulg)</th>
+                                        <th className="px-3 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Resist.</th>
+                                        <th className="px-3 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Peso</th>
+                                        <th className="px-3 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Unid.</th>
+                                        <th className="px-3 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Precio CLP</th>
                                     </tr>
                                 </thead>
-                                <tbody className="text-xs font-bold text-slate-600">
+                                <tbody className="font-bold text-slate-600">
                                     {filteredItems.length === 0 ? (
                                         <tr>
-                                            <td colSpan={5} className="px-4 py-12 text-center text-slate-400">
+                                            <td colSpan={8} className="px-4 py-12 text-center text-slate-400">
                                                 <i className="fa-solid fa-box-open text-3xl mb-3 opacity-50 block"></i>
-                                                No hay piezas en el catálogo que coincidan con la búsqueda.
+                                                {catalogItems.length === 0
+                                                    ? 'Catálogo vacío. Importa el archivo BD_OPTIMIZADA_NUDOS.'
+                                                    : 'Sin resultados para la búsqueda.'}
                                             </td>
                                         </tr>
                                     ) : (
-                                        filteredItems.slice(0, 100).map((item, idx) => (
+                                        filteredItems.slice(0, 150).map((item) => (
                                             <tr key={item.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
-                                                <td className="px-4 py-3 text-[#004071]">{item.name}</td>
-                                                <td className="px-4 py-3"><span className="bg-slate-100 text-slate-600 px-2 py-1 rounded text-[10px]">{item.material}</span></td>
-                                                <td className="px-4 py-3">{item.diameter}</td>
-                                                <td className="px-4 py-3">{item.diameterInches}</td>
-                                                <td className="px-4 py-3 text-right text-[#88C13E]">{item.weight.toFixed(2)}</td>
+                                                <td className="px-3 py-2 text-[#004071]">{item.tipoPieza}</td>
+                                                <td className="px-3 py-2">
+                                                    <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-[10px]">{item.material}</span>
+                                                </td>
+                                                <td className="px-3 py-2 text-center font-mono">{item.diametroMm}</td>
+                                                <td className="px-3 py-2 text-center font-mono">{item.diametroPulg}</td>
+                                                <td className="px-3 py-2 text-slate-500">{item.resistencia}</td>
+                                                <td className="px-3 py-2 text-right text-[#88C13E] font-mono">{item.pesoValor.toFixed(3)}</td>
+                                                <td className="px-3 py-2 text-slate-400 text-[10px]">{item.pesoUnidad}</td>
+                                                <td className="px-3 py-2 text-right font-mono text-[#004071]">
+                                                    {item.precio !== null ? `$${item.precio.toLocaleString('es-CL')}` : '—'}
+                                                </td>
                                             </tr>
                                         ))
                                     )}
-                                    {filteredItems.length > 100 && (
+                                    {filteredItems.length > 150 && (
                                         <tr>
-                                            <td colSpan={5} className="px-4 py-3 text-center text-[10px] text-slate-400 font-bold bg-slate-50/50">
-                                                Mostrando 100 de {filteredItems.length} resultados... Utiliza la búsqueda para afinar.
+                                            <td colSpan={8} className="px-4 py-3 text-center text-[10px] text-slate-400 font-bold bg-slate-50/50">
+                                                Mostrando 150 de {filteredItems.length} resultados — usa la búsqueda para afinar.
                                             </td>
                                         </tr>
                                     )}

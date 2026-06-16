@@ -27,7 +27,8 @@ export interface Piece {
   union?: string; // Ej: EL-EL, Br-Br, EL-Br
   unionCount?: number;
   hasMechanism?: boolean;
-  weight?: number; // Peso unitario en kg
+  weight?: number; // Peso unitario en kg o kg/m
+  price?: number;  // Precio unitario CLP sin IVA (desde catálogo)
   notes?: string;
 }
 
@@ -100,9 +101,15 @@ export interface Project {
 
 export interface CatalogItem {
   id: string;
-  name: string;
-  diameter: string;
-  weight: number;
-  diameterInches: string;
-  material: string;
+  categoria: string;     // Tuberias, Fittings, Bridas, Valvulas, Juntas de expansion
+  tipoPieza: string;     // Codo 90°, Tuberia, Tee, etc.
+  material: string;      // HDPE, PVC, Acero carbono, Fierro ductil, etc.
+  diametroMm: number;    // 90, 110, 160, etc.
+  diametroPulg: string;  // "3", "4", "6", etc.
+  resistencia: string;   // PN10, PN16, STD, SCH40, etc.
+  union: string;         // EF, TF, S/R, Brida, etc.
+  pesoValor: number;     // valor numérico del peso
+  pesoUnidad: string;    // 'kg' (fitting) | 'kg/m' (tubería)
+  precio: number | null; // CLP sin IVA, null si no hay dato
+  descripcion: string;
 }
