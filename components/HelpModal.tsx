@@ -25,7 +25,7 @@ interface Section {
 const SECTIONS: Section[] = [
   /* ── FLUJO ─────────────────────────────── */
   {
-    id: 'flujo', icon: 'fa-diagram-project', label: 'Flujo de trabajo',
+    id: 'flujo', icon: 'fa-solid fa-diagram-project', label: 'Flujo de trabajo',
     blocks: [
       {
         type: 'steps',
@@ -47,7 +47,7 @@ const SECTIONS: Section[] = [
 
   /* ── NUDOS ──────────────────────────────── */
   {
-    id: 'nudos', icon: 'fa-circle-nodes', label: 'Nudos',
+    id: 'nudos', icon: 'fa-solid fa-circle-nodes', label: 'Nudos',
     blocks: [
       {
         type: 'rows', title: 'Tipos de nudo',
@@ -80,7 +80,7 @@ const SECTIONS: Section[] = [
 
   /* ── PIEZAS ─────────────────────────────── */
   {
-    id: 'piezas', icon: 'fa-cubes', label: 'Piezas',
+    id: 'piezas', icon: 'fa-solid fa-cubes', label: 'Piezas',
     blocks: [
       {
         type: 'rows', title: 'Atributos de pieza',
@@ -116,7 +116,7 @@ const SECTIONS: Section[] = [
 
   /* ── UNIONES ────────────────────────────── */
   {
-    id: 'uniones', icon: 'fa-link', label: 'Lógica de Uniones',
+    id: 'uniones', icon: 'fa-solid fa-link', label: 'Lógica de Uniones',
     blocks: [
       {
         type: 'rows', title: 'Reglas de conteo por tipo de pieza',
@@ -149,7 +149,7 @@ const SECTIONS: Section[] = [
 
   /* ── CATÁLOGO ───────────────────────────── */
   {
-    id: 'catalogo', icon: 'fa-database', label: 'Catálogo BD', badge: '1 222 items',
+    id: 'catalogo', icon: 'fa-solid fa-database', label: 'Catálogo BD', badge: '1 222 items',
     blocks: [
       {
         type: 'rows', title: 'Columnas BD_OPTIMIZADA_NUDOS',
@@ -192,7 +192,7 @@ const SECTIONS: Section[] = [
 
   /* ── EXPORTACIONES ──────────────────────── */
   {
-    id: 'export', icon: 'fa-file-export', label: 'Exportaciones',
+    id: 'export', icon: 'fa-solid fa-file-export', label: 'Exportaciones',
     blocks: [
       {
         type: 'rows', title: 'Tabla Resumen (TABLA)',
@@ -263,7 +263,7 @@ const SECTIONS: Section[] = [
 
   /* ── IA ─────────────────────────────────── */
   {
-    id: 'ia', icon: 'fa-microchip', label: 'Análisis IA',
+    id: 'ia', icon: 'fa-solid fa-microchip', label: 'Análisis IA',
     blocks: [
       {
         type: 'rows', title: 'Modelo y flujo',
@@ -360,7 +360,7 @@ const HelpModal: React.FC<HelpModalProps> = ({ onClose }) => {
 
   return (
     <div className="fixed inset-0 bg-[#002d50]/80 backdrop-blur-md z-[280] flex items-center justify-center p-4">
-      <div className="bg-white w-full max-w-5xl max-h-[92vh] rounded-[2rem] overflow-hidden shadow-2xl flex flex-col">
+      <div className="bg-white w-full max-w-5xl h-[90vh] rounded-[2rem] overflow-hidden shadow-2xl flex flex-col">
 
         {/* header */}
         <div className="px-8 py-5 bg-[#004071] flex items-center justify-between shrink-0">
