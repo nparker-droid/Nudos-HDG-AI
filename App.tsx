@@ -15,6 +15,11 @@ import CatalogModal from './components/CatalogModal.tsx';
 import ProjectReviewModal from './components/ProjectReviewModal.tsx';
 import HelpModal from './components/HelpModal.tsx';
 import { findWeightInCatalog, parseCatalogCSV } from './services/catalogService.ts';
+import {
+  initDriveAuth, requestDriveAccess, saveAllToDrive, loadFromDrive,
+  isDriveConnected, disconnectDrive, getLastSyncTime,
+  GOOGLE_CLIENT_ID, autoReconnectDrive,
+} from './services/driveService.ts';
 
 const INITIAL_CREDITS = 50;
 
@@ -218,6 +223,8 @@ const App: React.FC = () => {
   const [copiedNode, setCopiedNode] = useState<HydraulicNode | null>(null);
   const [notification, setNotification] = useState('');
   const [isAutoSaving, setIsAutoSaving] = useState(false);
+  const [driveStatus, setDriveStatus] = useState<'idle'|'syncing'|'synced'|'error'>('idle');
+  const [driveConnected, setDriveConnected] = useState(false);
   const [showAuditReportModal, setShowAuditReportModal] = useState(false);
   const [showProjectReviewModal, setShowProjectReviewModal] = useState(false);
   const [showHelpModal, setShowHelpModal] = useState(false);
@@ -228,6 +235,14 @@ const App: React.FC = () => {
   });
   const [nodesToReportMissing, setNodesToReportMissing] = useState(new Set<string>());
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const driveConnectedRef = useRef(driveConnected);
+  useEffect(() => { driveConnectedRef.current = driveConnected; }, [driveConnected]);
+  const projectsRef = useRef(projects);
+  useEffect(() => { projectsRef.current = projects; }, [projects]);
+  const libraryRef = useRef(libraryNodes);
+  useEffect(() => { libraryRef.current = libraryNodes; }, [libraryNodes]);
+  const creditsRef = useRef(credits);
+  useEffect(() => { creditsRef.current = credits; }, [credits]);
 
   const toggleSection = (section: string) => {
     setCollapsedSections(prev => ({ ...prev, [section]: !prev[section] }));
@@ -297,6 +312,24 @@ const App: React.FC = () => {
     } else {
       loadDefaultCatalog();
     }
+  }, []);
+
+  // Reconexión silenciosa a Drive al cargar la página
+  useEffect(() => {
+    autoReconnectDrive().then(ok => setDriveConnected(ok));
+  }, []);
+
+  // Auto-save a Drive cada 5 min si está conectado
+  useEffect(() => {
+    const timer = setInterval(async () => {
+      if (!driveConnectedRef.current) return;
+      try {
+        await saveAllToDrive(projectsRef.current, libraryRef.current, creditsRef.current);
+        setDriveStatus('synced');
+        setTimeout(() => setDriveStatus('idle'), 2000);
+      } catch { /* silencioso */ }
+    }, 5 * 60 * 1000);
+    return () => clearInterval(timer);
   }, []);
 
   useEffect(() => {
@@ -868,10 +901,65 @@ const App: React.FC = () => {
     generateSummaryCSV(analysis.result.nodes, `RESUMEN_PIEZAS_DOC_${namePart.replace(/\s+/g, '_')}.csv`);
   };
 
-  const handleSaveToDrive = async () => {
-    alert("Esta funcionalidad requiere configuración de API de Google Drive.");
-    setShowSaveModal(false);
+  const handleDriveConnect = async () => {
+    if (!GOOGLE_CLIENT_ID) { setNotification('Configura VITE_GOOGLE_CLIENT_ID en Vercel.'); return; }
+    try {
+      setDriveStatus('syncing');
+      await initDriveAuth();
+      await requestDriveAccess();
+      setDriveConnected(true); setDriveStatus('synced');
+      setNotification('Google Drive conectado.');
+      setTimeout(() => setDriveStatus('idle'), 2000);
+    } catch (e: any) {
+      setDriveStatus('error');
+      setNotification(`Error Drive: ${e?.message}`);
+      setTimeout(() => setDriveStatus('idle'), 3000);
+    }
   };
+
+  const handleDriveSave = async () => {
+    if (!isDriveConnected()) { await handleDriveConnect(); if (!isDriveConnected()) return; }
+    try {
+      setDriveStatus('syncing');
+      await saveAllToDrive(projects, libraryNodes, credits);
+      setDriveStatus('synced');
+      setNotification('Guardado en Google Drive.');
+      setTimeout(() => setDriveStatus('idle'), 2000);
+    } catch (e: any) {
+      setDriveStatus('error');
+      setNotification(`Error Drive: ${e?.message}`);
+      setTimeout(() => setDriveStatus('idle'), 3000);
+    }
+  };
+
+  const handleDriveLoad = async () => {
+    if (!isDriveConnected()) { await handleDriveConnect(); if (!isDriveConnected()) return; }
+    if (!confirm('¿Restaurar datos desde Google Drive? Se sobreescribirá el estado actual.')) return;
+    try {
+      setDriveStatus('syncing');
+      const backup = await loadFromDrive();
+      if (!backup) { setNotification('No se encontró backup en Drive.'); setDriveStatus('idle'); return; }
+      // loadFromDrive ya escribió en localStorage — recargamos los estados
+      setProjects(backup.projects || []);
+      setLibraryNodes(backup.libraryNodes || []);
+      if (backup.credits !== undefined) setCredits(backup.credits);
+      setDriveStatus('synced');
+      setNotification(`Restaurado desde Drive (${new Date(backup.savedAt).toLocaleString('es-CL')}).`);
+      setTimeout(() => setDriveStatus('idle'), 2000);
+    } catch (e: any) {
+      setDriveStatus('error');
+      setNotification(`Error Drive: ${e?.message}`);
+      setTimeout(() => setDriveStatus('idle'), 3000);
+    }
+  };
+
+  const handleDriveDisconnect = () => {
+    disconnectDrive();
+    setDriveConnected(false);
+    setNotification('Google Drive desconectado.');
+  };
+
+  const handleSaveToDrive = handleDriveSave;
 
   // --- Manejo de Biblioteca ---
   const handleExportLibrary = () => {
@@ -1415,6 +1503,85 @@ const App: React.FC = () => {
                   <button onClick={() => setShowSaveModal(true)} className="px-6 py-3 bg-[#004071] text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg flex items-center gap-2 hover:bg-[#002D50] transition-all">
                     <i className="fa-solid fa-cloud-arrow-up text-xs"></i> Guardar
                   </button>
+
+                  {/* Botón Drive con menú desplegable */}
+                  <div className="relative group/drive">
+                    <button
+                      onClick={driveConnected ? undefined : handleDriveConnect}
+                      disabled={driveStatus === 'syncing'}
+                      className={`flex items-center gap-1.5 text-[10px] font-black px-3 py-3 rounded-2xl uppercase tracking-widest transition-all disabled:opacity-60 ${
+                        driveConnected
+                          ? 'bg-blue-50 text-[#4285F4] border border-blue-100 cursor-default'
+                          : 'bg-white border border-slate-200 text-slate-500 hover:bg-blue-50 hover:text-[#4285F4] hover:border-blue-200 cursor-pointer'
+                      }`}
+                      title={driveConnected ? 'Google Drive conectado' : 'Conectar Google Drive'}
+                    >
+                      {driveStatus === 'syncing'
+                        ? <i className="fa-solid fa-sync fa-spin text-xs"></i>
+                        : driveStatus === 'synced'
+                        ? <i className="fa-solid fa-check text-xs text-green-500"></i>
+                        : <i className="fa-brands fa-google-drive text-xs"></i>}
+                      {driveConnected && <span className="w-1.5 h-1.5 rounded-full bg-green-400"></span>}
+                    </button>
+
+                    {/* Menú flotante */}
+                    <div className="absolute right-0 top-full mt-2 w-60 bg-slate-900 text-white rounded-2xl shadow-2xl p-3 z-50 invisible opacity-0 group-hover/drive:visible group-hover/drive:opacity-100 transition-all pointer-events-none group-hover/drive:pointer-events-auto">
+                      {driveConnected ? (
+                        <>
+                          <div className="flex items-start gap-2 pb-2 border-b border-slate-700 mb-2">
+                            <i className="fa-brands fa-google-drive text-[#4285F4] text-sm mt-0.5 shrink-0"></i>
+                            <div>
+                              <p className="text-[8px] font-black uppercase text-slate-400">Carpeta en Drive</p>
+                              <p className="text-[9px] text-slate-200 font-bold mt-0.5">Mi unidad / Nudos Hidrogestion</p>
+                              <p className="text-[8px] text-slate-500">nudos-backup.json</p>
+                            </div>
+                          </div>
+                          {getLastSyncTime() && (
+                            <p className="text-[8px] text-slate-500 mb-2">
+                              Último backup: {new Date(getLastSyncTime()!).toLocaleString('es-CL')}
+                            </p>
+                          )}
+                          <div className="space-y-1">
+                            <button
+                              onClick={handleDriveSave}
+                              disabled={driveStatus === 'syncing'}
+                              className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[9px] font-black uppercase bg-[#4285F4] hover:bg-blue-500 text-white transition-all disabled:opacity-60"
+                            >
+                              <i className="fa-solid fa-cloud-arrow-up"></i> Guardar en Drive
+                            </button>
+                            <button
+                              onClick={handleDriveLoad}
+                              disabled={driveStatus === 'syncing'}
+                              className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[9px] font-black uppercase bg-slate-700 hover:bg-slate-600 text-white transition-all disabled:opacity-60"
+                            >
+                              <i className="fa-solid fa-cloud-arrow-down"></i> Restaurar desde Drive
+                            </button>
+                            <button
+                              onClick={handleDriveDisconnect}
+                              className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[9px] font-black uppercase text-red-400 hover:bg-red-900/30 transition-all"
+                            >
+                              <i className="fa-solid fa-plug-circle-xmark"></i> Desconectar
+                            </button>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-[8px] font-black uppercase text-slate-400 mb-1">Google Drive</p>
+                          <p className="text-[9px] text-slate-400 mb-2">Guarda un respaldo automático de tus proyectos en la nube.</p>
+                          <button
+                            onClick={handleDriveConnect}
+                            disabled={driveStatus === 'syncing'}
+                            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-[9px] font-black uppercase bg-[#4285F4] hover:bg-blue-500 text-white transition-all disabled:opacity-60"
+                          >
+                            {driveStatus === 'syncing'
+                              ? <i className="fa-solid fa-sync fa-spin"></i>
+                              : <i className="fa-brands fa-google-drive"></i>}
+                            Conectar Google Drive
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
                   <button
                     onClick={handlePasteNode}
                     disabled={!copiedNode || !activeCategoryId}
@@ -1675,17 +1842,49 @@ const App: React.FC = () => {
                   </button>
 
                   <button
-                    onClick={handleSaveToDrive}
-                    className="w-full flex items-center gap-6 p-6 bg-slate-50 opacity-60 border-2 border-slate-100 rounded-[2rem] text-left cursor-not-allowed"
+                    onClick={handleDriveSave}
+                    disabled={driveStatus === 'syncing'}
+                    className="w-full flex items-center gap-6 p-6 bg-blue-50 hover:bg-white border-2 border-blue-100 hover:border-[#4285F4] rounded-[2rem] text-left transition-all group disabled:opacity-60"
                   >
-                    <div className="w-14 h-14 bg-white shadow-md rounded-2xl flex items-center justify-center text-[#4285F4]">
-                      <i className="fa-brands fa-google-drive text-xl"></i>
+                    <div className="w-14 h-14 bg-white shadow-md rounded-2xl flex items-center justify-center text-[#4285F4] group-hover:scale-110 transition-transform">
+                      {driveStatus === 'syncing'
+                        ? <i className="fa-solid fa-sync fa-spin text-xl"></i>
+                        : driveStatus === 'synced'
+                        ? <i className="fa-solid fa-check text-xl text-green-500"></i>
+                        : <i className="fa-brands fa-google-drive text-xl"></i>}
                     </div>
                     <div>
-                      <h4 className="text-sm font-black text-slate-400 uppercase">Google Drive (Próximamente)</h4>
-                      <p className="text-xs text-slate-300">Sincroniza tus proyectos directamente en la nube.</p>
+                      <h4 className="text-sm font-black text-[#4285F4] uppercase flex items-center gap-2">
+                        Google Drive
+                        {driveConnected && <span className="w-2 h-2 rounded-full bg-green-400 inline-block"></span>}
+                      </h4>
+                      <p className="text-xs text-slate-400">
+                        {driveConnected
+                          ? getLastSyncTime()
+                            ? `Último guardado: ${new Date(getLastSyncTime()!).toLocaleString('es-CL')}`
+                            : 'Conectado — haz clic para guardar ahora'
+                          : 'Haz clic para conectar y guardar en la nube'}
+                      </p>
                     </div>
                   </button>
+                  {driveConnected && (
+                    <div className="flex gap-3">
+                      <button
+                        onClick={handleDriveLoad}
+                        disabled={driveStatus === 'syncing'}
+                        className="flex-1 flex items-center justify-center gap-2 py-3 bg-slate-100 hover:bg-blue-50 text-slate-600 hover:text-[#4285F4] rounded-2xl text-[10px] font-black uppercase transition-all disabled:opacity-60"
+                      >
+                        <i className="fa-solid fa-cloud-arrow-down"></i> Restaurar desde Drive
+                      </button>
+                      <button
+                        onClick={handleDriveDisconnect}
+                        className="px-4 py-3 bg-slate-100 hover:bg-red-50 text-slate-400 hover:text-red-500 rounded-2xl text-[10px] font-black uppercase transition-all"
+                        title="Desconectar Drive"
+                      >
+                        <i className="fa-solid fa-plug-circle-xmark"></i>
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="px-10 py-6 bg-slate-50 flex justify-end">
